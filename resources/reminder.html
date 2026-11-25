@@ -10,7 +10,7 @@
     display: flex;
     height: 100%;
     padding: 10px;
-    font-family: "PingFang SC", "Microsoft YaHei UI", "Noto Sans SC", sans-serif;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei UI", "Noto Sans SC", sans-serif;
     overflow: hidden;
   }
   @keyframes popIn {
@@ -23,15 +23,12 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background:
-      radial-gradient(240px 120px at 100% 0%, rgba(216, 155, 53, 0.14), transparent 70%),
-      linear-gradient(145deg, rgba(200, 93, 63, 0.08), rgba(59, 109, 88, 0.05)),
-      #fffcf7;
-    border: 1px solid rgba(42, 34, 24, 0.14);
-    border-radius: 20px;
+    background: #ffffff;
+    border: 1px solid rgba(15, 23, 42, 0.14);
+    border-radius: 16px;
     padding: 18px 20px 16px;
-    box-shadow: 0 18px 42px rgba(32, 24, 16, 0.28);
-    animation: popIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.24);
+    animation: popIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .card::before {
     content: "";
@@ -40,7 +37,7 @@
     right: 0;
     top: 0;
     height: 4px;
-    background: linear-gradient(90deg, #c85d3f, #d89b35, #3b6d58);
+    background: linear-gradient(90deg, #2563eb, #38bdf8, #059669);
   }
   .head {
     display: flex;
@@ -51,82 +48,83 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 600;
-    letter-spacing: 0.06em;
-    color: #c85d3f;
+    letter-spacing: 0.05em;
+    color: #2563eb;
   }
   .dot {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: #c85d3f;
-    box-shadow: 0 0 0 3px rgba(200, 93, 63, 0.18);
+    background: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
   }
   .brand {
     font-size: 11px;
-    color: #9c9182;
+    color: #64748b;
   }
   .title {
-    font-size: 18px;
-    font-weight: 600;
-    color: #28221a;
+    font-size: 17px;
+    font-weight: 700;
+    color: #0f172a;
     margin: 10px 0 6px;
     line-height: 1.38;
   }
   .body {
     flex: 1;
-    font-size: 13.5px;
-    color: #6e6457;
+    font-size: 13px;
+    color: #475569;
     line-height: 1.6;
     margin: 0;
   }
   .foot {
     display: flex;
     justify-content: flex-end;
-    gap: 8px;
+    gap: 7px;
     margin-top: 14px;
   }
   button {
     appearance: none;
     border: 0;
-    background: linear-gradient(180deg, #d06546 0%, #c85d3f 100%);
-    color: #fffaf2;
-    border-radius: 10px;
-    padding: 8px 14px;
-    font-size: 12.5px;
+    background: #2563eb;
+    color: #ffffff;
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-size: 12px;
     font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
     transition: all 0.15s ease;
   }
   button:hover {
-    background: #a44328;
+    background: #1d4ed8;
     transform: translateY(-1px);
   }
   button.ghost {
-    background: rgba(255, 255, 255, 0.72);
-    color: #28221a;
-    border: 1px solid rgba(42, 34, 24, 0.16);
+    background: #f8fafc;
+    color: #0f172a;
+    border: 1px solid rgba(15, 23, 42, 0.15);
   }
-  button.ghost:hover { background: #ede4d4; }
+  button.ghost:hover { background: #e2e8f0; }
   button.done {
-    background: linear-gradient(180deg, #457c64 0%, #3b6d58 100%);
+    background: #059669;
   }
-  button.done:hover { background: #2c5644; }
+  button.done:hover { background: #047857; }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
   <div class="card">
     <div class="head">
-      <div class="kind"><span class="dot"></span>工作提醒</div>
+      <div class="kind"><span class="dot"></span>工作事项提醒</div>
       <span class="brand">小猫工作助手</span>
     </div>
     <b class="title" id="t"></b>
     <p class="body" id="b"></p>
     <div class="foot">
-      <button class="ghost" id="snooze" hidden>10分钟后再提醒</button>
+      <button class="ghost" id="snooze" hidden>延后10分钟</button>
+      <button class="ghost" id="snooze60" hidden>延后1小时</button>
       <button class="done" id="done" hidden>标记完成</button>
       <button id="ok">确认</button>
     </div>
@@ -134,6 +132,7 @@
   <script>
     let currentWorkId = null
     const snoozeBtn = document.getElementById('snooze')
+    const snooze60Btn = document.getElementById('snooze60')
     const doneBtn = document.getElementById('done')
     const okBtn = document.getElementById('ok')
 
@@ -143,11 +142,16 @@
         document.getElementById('t').textContent = ev.title
         document.getElementById('b').textContent = ev.body
         snoozeBtn.hidden = !currentWorkId
+        snooze60Btn.hidden = !currentWorkId
         doneBtn.hidden = !currentWorkId
       })
       okBtn.addEventListener('click', () => window.rian.dismissReminder())
       snoozeBtn.addEventListener('click', () => {
         if (currentWorkId) window.rian.snoozeReminder(currentWorkId, 10)
+        else window.rian.dismissReminder()
+      })
+      snooze60Btn.addEventListener('click', () => {
+        if (currentWorkId) window.rian.snoozeReminder(currentWorkId, 60)
         else window.rian.dismissReminder()
       })
       doneBtn.addEventListener('click', () => {

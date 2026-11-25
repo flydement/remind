@@ -1,9 +1,18 @@
 export type WorkStatus = 'todo' | 'doing' | 'done'
+export type WorkPriority = 'high' | 'medium' | 'low'
 export type NotifyFrequency = 'once' | 'daily' | 'hourly' | 'weekdays'
-export type RepeatRule = 'none' | 'weekly' | 'monthly'
+export type RepeatRule = 'none' | 'daily' | 'weekdays' | 'weekly' | 'monthly'
 export type QuoteKind = 'motivation' | 'riddle' | 'joke'
 export type ReportKind = 'weekly' | 'monthly'
+export type ReportStyle = 'executive' | 'concise' | 'warm'
+export type ThemeMode = 'slate' | 'paper' | 'dark'
 export type PageId = 'today' | 'work' | 'reports' | 'quotes' | 'health' | 'settings'
+
+export interface SubtaskItem {
+  id: string
+  title: string
+  done: boolean
+}
 
 export interface WorkNotify {
   enabled: boolean
@@ -23,6 +32,10 @@ export interface WorkItem {
   updatedAt: string
   completedAt?: string
   status: WorkStatus
+  priority?: WorkPriority
+  subtasks?: SubtaskItem[]
+  focusMinutes?: number
+  pinned?: boolean
   notify: WorkNotify
   repeat: RepeatRule
   sourceText?: string
@@ -69,11 +82,22 @@ export interface AppSettings {
   sound: boolean
   workStart: string
   workEnd: string
+  theme?: ThemeMode
+  dndUntil?: string
+  focusMinutesDefault?: number
+}
+
+export interface FocusStats {
+  totalMinutes: number
+  sessions: number
+  todayDate?: string
+  todayMinutes: number
 }
 
 export interface ReportRecord {
   id: string
   kind: ReportKind
+  style?: ReportStyle
   periodStart: string
   periodEnd: string
   generatedAt: string
@@ -82,8 +106,11 @@ export interface ReportRecord {
   stats: {
     created: number
     done: number
+    doing?: number
     pending: number
     overdue: number
+    focusMinutes?: number
+    completionRate?: number
   }
 }
 
@@ -117,11 +144,14 @@ export interface AppState {
   settings: AppSettings
   reports: ReportRecord[]
   inbox: NotifyEvent[]
+  focusStats?: FocusStats
 }
 
 export interface ParsedWorkDraft {
   title: string
   dueAt: string
+  priority: WorkPriority
+  tags: string[]
   notify: WorkNotify
   repeat: RepeatRule
   notes: string
@@ -147,8 +177,15 @@ export const EMPTY_STATE: AppState = {
     startWithSystem: false,
     sound: true,
     workStart: '09:00',
-    workEnd: '18:30'
+    workEnd: '18:30',
+    theme: 'slate',
+    focusMinutesDefault: 25
   },
   reports: [],
-  inbox: []
+  inbox: [],
+  focusStats: {
+    totalMinutes: 0,
+    sessions: 0,
+    todayMinutes: 0
+  }
 }

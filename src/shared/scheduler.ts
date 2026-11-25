@@ -1,9 +1,15 @@
 import type { AppState, HealthReminder, NotifyEvent, QuoteItem, WorkItem } from './types'
 import { createId } from './ids'
 import { notifyAtFor } from './defaults'
-import { addDays, addMonthsClamped, inWorkHours, isSameDay, parseHm } from './time'
+import { addDays, addMonthsClamped, inWorkHours, isPastDue, isSameDay, nextWorkday, parseHm, toLocalDate } from './time'
 
 const WEEKDAY = [1, 2, 3, 4, 5]
+
+export function isDndActive(settings: AppState['settings'], now = new Date()): boolean {
+  if (!settings.dndUntil) return false
+  const until = new Date(settings.dndUntil).getTime()
+  return Number.isFinite(until) && until > now.getTime()
+}
 
 function firedToday(iso: string | undefined, now: Date): boolean {
   if (!iso) return false
@@ -98,8 +104,12 @@ export interface TickResult {
 }
 
 export function tickScheduler(state: AppState, now = new Date()): TickResult {
-  const at = now.toISOString()
   const events: NotifyEvent[] = []
+  if (isDndActive(state.settings, now)) {
+    return { state, events }
+  }
+
+  const at = now.toISOString()
   let mutated = false
 
   const workItems = state.workItems.map((item) => {
@@ -110,7 +120,7 @@ export function tickScheduler(state: AppState, now = new Date()): TickResult {
       id: createId('nt'),
       at,
       title: item.title,
-      body: daysLeft === 0 ? '今天到期，记得处理。' : `还有 ${daysLeft} 天到期，提前提醒你一下。`,
+      body: daysLeft === 0 ? '今天到期，请及时跟进处理。' : `距离截止还有 ${daysLeft} 天，提前提醒你安排进度。`,
       source: 'work',
       read: false,
       modal: true,
@@ -129,7 +139,7 @@ export function tickScheduler(state: AppState, now = new Date()): TickResult {
   if (quote) {
     mutated = true
     const kindLabel = quote.kind === 'motivation' ? '今日一句' : quote.kind === 'riddle' ? '脑筋急转弯' : '轻松一下'
-    const body = quote.answer ? `${quote.content}\n（想看答案就打开小猫工作助手）` : quote.content
+    const body = quote.answer ? `${quote.content}\n（打开小猫工作助手可查看答案）` : quote.content
     const ev: NotifyEvent = {
       id: createId('nt'),
       at,
@@ -144,7 +154,6 @@ export function tickScheduler(state: AppState, now = new Date()): TickResult {
 
   const health = state.health.map((item) => {
     if (!healthInWindow(item, now, state.settings)) return item
-    // 首次启用或首次启动时先记录起始基准时间，避免刚打开应用就连续弹出多条健康提醒
     if (!item.lastFiredAt) {
       mutated = true
       return { ...item, lastFiredAt: at }
@@ -173,7 +182,7 @@ export function tickScheduler(state: AppState, now = new Date()): TickResult {
       workItems,
       quoteSettings,
       health,
-      inbox: events.length ? [...events, ...state.inbox].slice(0, 80) : state.inbox
+      inbox: events.length ? [...events, ...state.inbox].slice(0, 100) : state.inbox
     },
     events
   }
@@ -228,10 +237,12 @@ export function rolloverRepeats(state: AppState, now = new Date()): AppState {
   const workItems = state.workItems.map((item) => {
     if (item.repeat === 'none' || item.status !== 'done' || !item.completedAt) return item
     const due = new Date(item.dueAt)
-    const nextDue =
-      item.repeat === 'weekly'
-        ? addDays(due, 7)
-        : addMonthsClamped(due, 1)
+    let nextDue: Date
+    if (item.repeat === 'daily') nextDue = addDays(due, 1)
+    else if (item.repeat === 'weekdays') nextDue = nextWorkday(due)
+    else if (item.repeat === 'weekly') nextDue = addDays(due, 7)
+    else nextDue = addMonthsClamped(due, 1)
+
     const existsInState = state.workItems.some(
       (w) => w.title === item.title && isSameDay(new Date(w.dueAt), nextDue)
     )
@@ -249,10 +260,55 @@ export function rolloverRepeats(state: AppState, now = new Date()): AppState {
       createdAt: at,
       updatedAt: at,
       dueAt: nextDue.toISOString(),
+      subtasks: item.subtasks?.map((st) => ({ ...st, done: false })),
       notify: { ...item.notify, lastFiredAt: undefined, snoozedUntil: undefined }
     })
     return item
   })
   if (!extra.length) return state
   return { ...state, workItems: [...extra, ...workItems] }
+}
+
+export function batchPostponeOverdue(state: AppState, days = 1, now = new Date()): { state: AppState; count: number } {
+  const target = addDays(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 18, 0, 0, 0), Math.max(0, days))
+  const targetIso = target.toISOString()
+  const at = now.toISOString()
+  let count = 0
+  const workItems = state.workItems.map((w) => {
+    if (w.status === 'done' || !isPastDue(w.dueAt, now)) return w
+    count++
+    return {
+      ...w,
+      dueAt: targetIso,
+      updatedAt: at,
+      notify: { ...w.notify, lastFiredAt: undefined, snoozedUntil: undefined }
+    }
+  })
+  return count > 0 ? { state: { ...state, workItems }, count } : { state, count: 0 }
+}
+
+export function recordFocusMinutes(
+  state: AppState,
+  minutes: number,
+  workId?: string,
+  now = new Date()
+): AppState {
+  const mins = Math.max(1, Math.round(minutes))
+  const today = toLocalDate(now)
+  const prev = state.focusStats ?? { totalMinutes: 0, sessions: 0, todayMinutes: 0 }
+  const todayMinutes = (prev.todayDate === today ? prev.todayMinutes : 0) + mins
+  const focusStats = {
+    totalMinutes: prev.totalMinutes + mins,
+    sessions: prev.sessions + 1,
+    todayDate: today,
+    todayMinutes
+  }
+  const workItems = workId
+    ? state.workItems.map((w) =>
+        w.id === workId
+          ? { ...w, focusMinutes: (w.focusMinutes ?? 0) + mins, updatedAt: now.toISOString() }
+          : w
+      )
+    : state.workItems
+  return { ...state, focusStats, workItems }
 }

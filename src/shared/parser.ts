@@ -1,4 +1,4 @@
-import type { NotifyFrequency, ParsedWorkDraft, RepeatRule, WorkNotify } from './types'
+import type { NotifyFrequency, ParsedWorkDraft, RepeatRule, WorkNotify, WorkPriority } from './types'
 import { addDays, atLocal, pad2, startOfWeek, toLocalDate } from './time'
 
 const WEEKDAY_MAP: Record<string, number> = {
@@ -69,8 +69,8 @@ function parseTime(raw: string): { time: string; used: boolean } {
 
 function parseFrequency(raw: string): { frequency: NotifyFrequency; used: boolean } {
   if (/每小时/.test(raw)) return { frequency: 'hourly', used: true }
-  if (/工作日|每个工作日/.test(raw)) return { frequency: 'weekdays', used: true }
-  if (/每天|每日/.test(raw)) return { frequency: 'daily', used: true }
+  if (/(?:每个?工作日|工作日)(?!重复)/.test(raw)) return { frequency: 'weekdays', used: true }
+  if (/(?:每天|每日)(?!重复)/.test(raw)) return { frequency: 'daily', used: true }
   if (/仅一次|只提醒一次|一次即可/.test(raw)) return { frequency: 'once', used: true }
   return { frequency: 'once', used: false }
 }
@@ -80,13 +80,52 @@ function parseRepeat(raw: string): { repeat: RepeatRule; weekday?: number; month
   if (monthly) {
     return { repeat: 'monthly', monthDay: Number(monthly[1]), used: true }
   }
-  const weekly = raw.match(/每周\s*[周星期]?\s*([一二三四五六日天])/)
+  const weekly = raw.match(/每周\s*[周星期礼拜]?\s*([一二三四五六日天])/)
   if (weekly) {
     return { repeat: 'weekly', weekday: WEEKDAY_MAP[weekly[1]], used: true }
   }
+  if (/每个?工作日重复|工作日例行/.test(raw)) return { repeat: 'weekdays', used: true }
+  if (/每天重复|每日重复|每日例行/.test(raw)) return { repeat: 'daily', used: true }
   if (/每月/.test(raw)) return { repeat: 'monthly', used: true }
   if (/每周/.test(raw)) return { repeat: 'weekly', used: true }
   return { repeat: 'none', used: false }
+}
+
+function parseTags(raw: string): { tags: string[]; cleaned: string } {
+  const tags: string[] = []
+  const cleaned = raw.replace(/#([\p{L}\p{N}_-]{1,20})/gu, (_m, tag: string) => {
+    if (!tags.includes(tag)) tags.push(tag)
+    return ' '
+  })
+  return { tags, cleaned }
+}
+
+function parsePriority(raw: string): { priority: WorkPriority; used: boolean; cleaned: string } {
+  let priority: WorkPriority = 'medium'
+  let used = false
+  let cleaned = raw
+
+  const highRe = /(?:^|[\s，,。.\[【])(紧急|加急|高优|高优先级|P0|P1)(?=$|[\s，,。.\]】])/gi
+  const lowRe = /(?:^|[\s，,。.\[【])(低优|低优先级|不急|次要|P3)(?=$|[\s，,。.\]】])/gi
+  const medRe = /(?:^|[\s，,。.\[【])(中优|普通优先级|P2)(?=$|[\s，,。.\]】])/gi
+  const bangRe = /(!{2,}|！{2,})/g
+
+  if (highRe.test(cleaned) || bangRe.test(cleaned)) {
+    priority = 'high'
+    used = true
+    cleaned = cleaned.replace(highRe, ' ').replace(bangRe, ' ')
+  } else if (lowRe.test(cleaned)) {
+    priority = 'low'
+    used = true
+    cleaned = cleaned.replace(lowRe, ' ')
+  } else if (medRe.test(cleaned)) {
+    priority = 'medium'
+    used = true
+    cleaned = cleaned.replace(medRe, ' ')
+  }
+
+  cleaned = cleaned.replace(/\[\s*\]|【\s*】/g, ' ')
+  return { priority, used, cleaned }
 }
 
 function resolveDate(raw: string, now: Date): { date: Date; used: boolean; hint?: string } {
@@ -95,7 +134,17 @@ function resolveDate(raw: string, now: Date): { date: Date; used: boolean; hint?
   if (/大后天/.test(raw)) return { date: addDays(todayStart, 3), used: true }
   if (/后天/.test(raw)) return { date: addDays(todayStart, 2), used: true }
   if (/明天/.test(raw)) return { date: addDays(todayStart, 1), used: true }
-  if (/今天/.test(raw)) return { date: todayStart, used: true }
+  if (/今天|今日/.test(raw)) return { date: todayStart, used: true }
+
+  const daysLater = raw.match(/(\d{1,3})\s*[天日](?:后|之后|内)/)
+  if (daysLater) {
+    return { date: addDays(todayStart, Math.max(0, Number(daysLater[1]))), used: true }
+  }
+
+  const weeksLater = raw.match(/(\d{1,2})\s*(?:周|个?星期)(?:后|之后|内)/)
+  if (weeksLater) {
+    return { date: addDays(todayStart, Math.max(1, Number(weeksLater[1])) * 7), used: true }
+  }
 
   const fullCn = raw.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*[号日]?/)
   if (fullCn) {
@@ -110,6 +159,10 @@ function resolveDate(raw: string, now: Date): { date: Date; used: boolean; hint?
   const nextMonthDay = raw.match(/下个?月\s*(\d{1,2})\s*[号日]?/)
   if (nextMonthDay) {
     return { date: clampedDate(now.getFullYear(), now.getMonth() + 1, Number(nextMonthDay[1])), used: true }
+  }
+
+  if (/下个?月底/.test(raw)) {
+    return { date: new Date(now.getFullYear(), now.getMonth() + 2, 0), used: true }
   }
 
   if (/本?月底/.test(raw)) {
@@ -130,19 +183,24 @@ function resolveDate(raw: string, now: Date): { date: Date; used: boolean; hint?
     }
   }
 
-  const nextWeek = raw.match(/下周\s*[周星期]?\s*([一二三四五六日天])/)
+  const nextWeek = raw.match(/下周\s*[周星期礼拜]?\s*([一二三四五六日天])/)
   if (nextWeek) {
     return { date: thisOrNextWeekDay(now, WEEKDAY_MAP[nextWeek[1]], true), used: true }
   }
 
-  const thisWeek = raw.match(/(?:本周|这周)\s*([一二三四五六日天])/)
+  const thisWeek = raw.match(/(?:本周|这周)\s*[周星期礼拜]?\s*([一二三四五六日天])/)
   if (thisWeek) {
     return { date: thisOrNextWeekDay(now, WEEKDAY_MAP[thisWeek[1]], false), used: true }
   }
 
-  const weekly = raw.match(/每周\s*[周星期]?\s*([一二三四五六日天])/)
+  const weekly = raw.match(/每周\s*[周星期礼拜]?\s*([一二三四五六日天])/)
   if (weekly) {
     return { date: nextWeekday(now, WEEKDAY_MAP[weekly[1]]), used: true }
+  }
+
+  const bareWeekday = raw.match(/(?<![每下本这])(?:周|星期|礼拜)\s*([一二三四五六日天])/)
+  if (bareWeekday) {
+    return { date: thisOrNextWeekDay(now, WEEKDAY_MAP[bareWeekday[1]], false), used: true }
   }
 
   const monthly = raw.match(/每月\s*(\d{1,2})\s*[号日]?/)
@@ -166,6 +224,10 @@ function resolveDate(raw: string, now: Date): { date: Date; used: boolean; hint?
     return { date, used: true }
   }
 
+  if (/每天重复|每日重复|每日例行|每个?工作日重复|工作日例行/.test(raw)) {
+    return { date: todayStart, used: true }
+  }
+
   return { date: addDays(todayStart, 1), used: false, hint: '未识别到日期，默认明天' }
 }
 
@@ -176,21 +238,26 @@ export function parseWorkText(input: string, now = new Date()): ParsedWorkDraft 
     return {
       title: '',
       dueAt: addDays(now, 1).toISOString(),
+      priority: 'medium',
+      tags: [],
       notify: { enabled: true, advanceDays: 0, time: '09:00', frequency: 'once' },
       repeat: 'none',
       notes: '',
       sourceText,
       confidence: 0,
-      hints: ['请输入工作项，例如：月报 8月11号 提前5天通知']
+      hints: ['请输入工作项，例如：月报 8月11号 提前5天通知 #财务 紧急']
     }
   }
 
-  const advance = sourceText.match(/提前\s*(\d+)\s*天/)
+  const { tags, cleaned: withoutTags } = parseTags(sourceText)
+  const { priority, used: priorityUsed, cleaned: withoutPriority } = parsePriority(withoutTags)
+
+  const advance = withoutPriority.match(/提前\s*(\d+)\s*天/)
   const advanceDays = advance ? Number(advance[1]) : 0
-  const timeInfo = parseTime(sourceText)
-  const freqInfo = parseFrequency(sourceText)
-  const repeatInfo = parseRepeat(sourceText)
-  const dateInfo = resolveDate(sourceText, now)
+  const timeInfo = parseTime(withoutPriority)
+  const freqInfo = parseFrequency(withoutPriority)
+  const repeatInfo = parseRepeat(withoutPriority)
+  const dateInfo = resolveDate(withoutPriority, now)
 
   if (dateInfo.hint) hints.push(dateInfo.hint)
   if (advanceDays > 0) {
@@ -200,20 +267,26 @@ export function parseWorkText(input: string, now = new Date()): ParsedWorkDraft 
     hints.push(`将在截止当天 ${timeInfo.time} 提醒`)
   }
 
-  let title = sourceText
+  let title = withoutPriority
   title = strip(title, /(\d{4}\s*年)?\s*\d{1,2}\s*月\s*\d{1,2}\s*[号日]?/g)
   title = strip(title, /\d{4}\s*[-/]\s*\d{1,2}\s*[-/]\s*\d{1,2}/g)
   title = strip(title, /(?<!\d)\d{1,2}\s*[-/]\s*\d{1,2}(?!\d)/g)
   title = strip(title, /下个?月\s*\d{1,2}\s*[号日]?/g)
-  title = strip(title, /本?月底/g)
+  title = strip(title, /(?:下个?|本)?月底/g)
   title = strip(title, /每月\s*\d{1,2}\s*[号日]?/g)
-  title = strip(title, /(?:每周|下周|本周|这周)\s*[周星期]?\s*[一二三四五六日天]/g)
+  title = strip(title, /\d{1,3}\s*[天日](?:后|之后|内)/g)
+  title = strip(title, /\d{1,2}\s*(?:周|个?星期)(?:后|之后|内)/g)
+  title = strip(title, /(?:每周|下周|本周|这周)\s*[周星期礼拜]?\s*[一二三四五六日天]/g)
+  title = strip(title, /(?:周|星期|礼拜)\s*[一二三四五六日天]/g)
   title = strip(title, /\d{1,2}\s*[号日]/g)
-  title = strip(title, /大后天|后天|明天|今天/g)
+  title = strip(title, /大后天|后天|明天|今天|今日/g)
   title = strip(title, /提前\s*\d+\s*天/g)
   title = strip(title, /(上午|中午|下午|晚上)?\s*\d{1,2}\s*[:：]\s*\d{2}/g)
   title = strip(title, /(上午|中午|下午|晚上)?\s*\d{1,2}\s*点(?:\s*\d{1,2}\s*分?|半)?/g)
-  title = strip(title, /每天|每日|工作日|每个工作日|每小时|仅一次|只提醒一次|一次即可|每月|每周/g)
+  title = strip(
+    title,
+    /每个?工作日重复|工作日例行|每天重复|每日重复|每日例行|每天|每日|工作日|每个工作日|每小时|仅一次|只提醒一次|一次即可|每月|每周/g
+  )
   title = strip(title, /通知|提醒|截止|之前/g)
   title = title.replace(/[，,。.\s]+/g, ' ').trim()
 
@@ -243,11 +316,13 @@ export function parseWorkText(input: string, now = new Date()): ParsedWorkDraft 
   if (dateInfo.used) confidence += 0.25
   if (title && title !== '未命名工作项') confidence += 0.2
   if (advance) confidence += 0.1
-  if (timeInfo.used) confidence += 0.05
+  if (timeInfo.used || priorityUsed || tags.length > 0) confidence += 0.05
 
   return {
     title,
     dueAt: dueLocal.toISOString(),
+    priority,
+    tags,
     notify,
     repeat: repeatInfo.repeat,
     notes: '',
@@ -268,16 +343,26 @@ export function describeDraft(draft: ParsedWorkDraft): string {
   }
   const repeatLabel: Record<RepeatRule, string> = {
     none: '不重复',
+    daily: '每天重复',
+    weekdays: '工作日重复',
     weekly: '每周重复',
     monthly: '每月重复'
   }
-  return [
+  const prioLabel: Record<WorkPriority, string> = {
+    high: '高优先级',
+    medium: '普通优先级',
+    low: '低优先级'
+  }
+  const parts = [
     `工作项「${draft.title}」`,
     `截止 ${due.getMonth() + 1}月${due.getDate()}日`,
     `提醒日 ${notifyDay.getMonth() + 1}月${notifyDay.getDate()}日 ${draft.notify.time}`,
-    freqLabel[draft.notify.frequency],
-    repeatLabel[draft.repeat]
-  ].join(' · ')
+    freqLabel[draft.notify.frequency]
+  ]
+  if (draft.repeat !== 'none') parts.push(repeatLabel[draft.repeat])
+  if (draft.priority !== 'medium') parts.push(prioLabel[draft.priority])
+  if (draft.tags.length) parts.push(draft.tags.map((t) => `#${t}`).join(' '))
+  return parts.join(' · ')
 }
 
 export function previewNotifyDate(dueAt: string, advanceDays: number, time: string): string {

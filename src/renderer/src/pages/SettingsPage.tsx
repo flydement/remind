@@ -1,34 +1,35 @@
 import { useRef, useState } from 'react'
-import { BellRing, Database, Download, MessageSquarePlus, SlidersHorizontal, Upload } from 'lucide-react'
-import type { QuoteItem, QuoteKind } from '@shared/types'
-import { createId } from '@shared/ids'
+import { BellRing, Database, Download, Keyboard, Palette, SlidersHorizontal, Upload } from 'lucide-react'
+import type { ThemeMode } from '@shared/types'
 import { toLocalDate } from '@shared/time'
 import PageHead from '../components/PageHead'
-import { KIND_LABEL } from '../kindLabel'
 import type { useAppState } from '../state'
+
+const THEMES: { id: ThemeMode; name: string; desc: string; colors: [string, string, string] }[] = [
+  {
+    id: 'slate',
+    name: '严谨商务（默认）',
+    desc: '冷灰蓝高对比度界面，层级清晰、利落专业',
+    colors: ['#f4f6f9', '#0f172a', '#2563eb']
+  },
+  {
+    id: 'paper',
+    name: '温润纸感',
+    desc: '柔和暖米色调与衬线标题，适合长时间阅读',
+    colors: ['#f6f0e6', '#28221a', '#c85d3f']
+  },
+  {
+    id: 'dark',
+    name: '深色专注',
+    desc: '低眩光深蓝暗色模式，适合夜间与沉浸开发',
+    colors: ['#0b1120', '#131c2e', '#3b82f6']
+  }
+]
 
 export default function SettingsPage({ app }: { app: ReturnType<typeof useAppState> }) {
   const s = app.state.settings
-  const [kind, setKind] = useState<QuoteKind>('motivation')
-  const [content, setContent] = useState('')
-  const [answer, setAnswer] = useState('')
-  const [confirmQuoteId, setConfirmQuoteId] = useState<string | null>(null)
   const [backupMsg, setBackupMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
-
-  const addQuote = (): void => {
-    if (!content.trim()) return
-    const item: QuoteItem = {
-      id: createId('qt'),
-      kind,
-      content: content.trim(),
-      answer: answer.trim() || undefined,
-      enabled: true
-    }
-    app.patch((st) => ({ ...st, quotes: [item, ...st.quotes] }))
-    setContent('')
-    setAnswer('')
-  }
 
   const handleExport = (): void => {
     const json = app.exportState()
@@ -41,7 +42,7 @@ export default function SettingsPage({ app }: { app: ReturnType<typeof useAppSta
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-    setBackupMsg({ ok: true, text: '已导出本地备份文件（JSON）。' })
+    setBackupMsg({ ok: true, text: '已成功导出完整数据备份文件（JSON）。' })
   }
 
   const handleImportFile = async (file: File | undefined): Promise<void> => {
@@ -54,146 +55,176 @@ export default function SettingsPage({ app }: { app: ReturnType<typeof useAppSta
 
   return (
     <>
-      <PageHead title="设置" sub="数据保存在本机。以后接到手机时，工作项解析、提醒规则和周报算法都可以复用。" />
-      <div className="card">
-        <h3><SlidersHorizontal size={15} color="var(--terra)" /> 常规与通知</h3>
-        <div className="switch">
-          <div>
-            <b>开机启动</b>
-            <div className="muted">让小猫工作助手在托盘里默默盯着截止日。</div>
-          </div>
-          <button
-            className={`toggle ${s.startWithSystem ? 'on' : ''}`}
-            onClick={() => app.patch((st) => ({ ...st, settings: { ...st.settings, startWithSystem: !s.startWithSystem } }))}
-          />
+      <PageHead
+        title="系统设置"
+        sub="自定义视觉主题、通知偏好、全局快捷键及本地数据导入导出。"
+      />
+
+      <div className="card" style={{ marginBottom: 18 }}>
+        <h3><Palette size={15} color="var(--primary)" /> 界面外观主题</h3>
+        <div className="theme-cards">
+          {THEMES.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`theme-card ${app.theme === t.id ? 'active' : ''}`}
+              onClick={() => app.setTheme(t.id)}
+            >
+              <div className="theme-swatch">
+                <i style={{ background: t.colors[0] }} />
+                <i style={{ background: t.colors[1] }} />
+                <i style={{ background: t.colors[2] }} />
+              </div>
+              <div style={{ fontWeight: 600, fontSize: 13.5 }}>{t.name}</div>
+              <div className="muted" style={{ marginTop: 4, lineHeight: 1.45 }}>{t.desc}</div>
+            </button>
+          ))}
         </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 18 }}>
+        <h3><SlidersHorizontal size={15} color="var(--primary)" /> 常规与提醒参数</h3>
+        {window.rian ? (
+          <div className="switch">
+            <div>
+              <b>开机自动启动</b>
+              <div className="muted">登录系统后自动驻留系统托盘守护提醒计划。</div>
+            </div>
+            <button
+              className={`toggle ${s.startWithSystem ? 'on' : ''}`}
+              onClick={() =>
+                app.patch((st) => ({
+                  ...st,
+                  settings: { ...st.settings, startWithSystem: !st.settings.startWithSystem }
+                }))
+              }
+            />
+          </div>
+        ) : null}
         <div className="switch">
           <div>
-            <b>通知声音</b>
-            <div className="muted">系统通知是否出声。</div>
+            <b>通知提示音</b>
+            <div className="muted">控制事项提醒与专注计时结束时的声音提示。</div>
           </div>
           <button
             className={`toggle ${s.sound ? 'on' : ''}`}
-            onClick={() => app.patch((st) => ({ ...st, settings: { ...st.settings, sound: !s.sound } }))}
+            onClick={() =>
+              app.patch((st) => ({
+                ...st,
+                settings: { ...st.settings, sound: !st.settings.sound }
+              }))
+            }
           />
         </div>
         <div className="switch">
           <div>
-            <b>通知通道测试</b>
-            <div className="muted">发送一条测试提醒，确认系统通知正常工作。</div>
+            <b>通知通道自检</b>
+            <div className="muted">立即发送一条测试通知，验证系统弹窗与提示音状态。</div>
           </div>
           <button className="btn ghost small" onClick={() => app.testNotify()}>
             <BellRing size={13} />
             发送测试通知
           </button>
         </div>
-        <div className="form-grid" style={{ marginTop: 16 }}>
+
+        <div className="form-grid" style={{ marginTop: 14 }}>
           <div className="field">
-            <label>默认工作开始</label>
+            <label>默认工作开始时间</label>
             <input
               type="time"
               value={s.workStart}
-              onChange={(e) => app.patch((st) => ({ ...st, settings: { ...st.settings, workStart: e.target.value || '09:00' } }))}
+              onChange={(e) =>
+                app.patch((st) => ({
+                  ...st,
+                  settings: { ...st.settings, workStart: e.target.value || '09:00' }
+                }))
+              }
             />
           </div>
           <div className="field">
-            <label>默认工作结束</label>
+            <label>默认工作结束时间</label>
             <input
               type="time"
               value={s.workEnd}
-              onChange={(e) => app.patch((st) => ({ ...st, settings: { ...st.settings, workEnd: e.target.value || '18:30' } }))}
+              onChange={(e) =>
+                app.patch((st) => ({
+                  ...st,
+                  settings: { ...st.settings, workEnd: e.target.value || '18:30' }
+                }))
+              }
             />
           </div>
-        </div>
-      </div>
-
-      <div className="card" style={{ marginTop: 18 }}>
-        <h3><Database size={15} color="var(--forest)" /> 数据备份与恢复</h3>
-        <p className="muted" style={{ marginTop: 0 }}>
-          导出全部工作项、周月报、自定义语录与健康设置，换电脑或重装系统时可一键导入恢复。
-        </p>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
-          <button className="btn ghost small" onClick={handleExport}>
-            <Download size={13} />
-            导出备份 JSON
-          </button>
-          <button className="btn ghost small" onClick={() => fileRef.current?.click()}>
-            <Upload size={13} />
-            导入备份 JSON
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".json,application/json"
-            style={{ display: 'none' }}
-            onChange={(e) => void handleImportFile(e.target.files?.[0])}
-          />
-        </div>
-        {backupMsg ? (
-          <div className={`status-msg ${backupMsg.ok ? 'ok' : 'err'}`}>{backupMsg.text}</div>
-        ) : null}
-      </div>
-
-      <div className="card" style={{ marginTop: 18 }}>
-        <h3><MessageSquarePlus size={15} color="var(--terra)" /> 添加语言库内容</h3>
-        <div className="form-grid">
           <div className="field">
-            <label>类型</label>
-            <select value={kind} onChange={(e) => setKind(e.target.value as QuoteKind)}>
-              <option value="motivation">鸡血</option>
-              <option value="riddle">脑筋急转弯</option>
-              <option value="joke">笑话</option>
+            <label>默认番茄专注时长</label>
+            <select
+              value={s.focusMinutesDefault ?? 25}
+              onChange={(e) =>
+                app.patch((st) => ({
+                  ...st,
+                  settings: { ...st.settings, focusMinutesDefault: Number(e.target.value) || 25 }
+                }))
+              }
+            >
+              <option value={15}>15 分钟（短冲刺）</option>
+              <option value={25}>25 分钟（标准番茄钟）</option>
+              <option value={35}>35 分钟（进阶专注）</option>
+              <option value={45}>45 分钟（深度工作）</option>
+              <option value={60}>60 分钟（长时段沉浸）</option>
             </select>
           </div>
-          <div className="field">
-            <label>答案（急转弯可选）</label>
-            <input value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="可留空" />
-          </div>
-        </div>
-        <div className="field" style={{ marginTop: 12 }}>
-          <label>内容</label>
-          <textarea rows={3} value={content} onChange={(e) => setContent(e.target.value)} placeholder="写一句轻松的话..." />
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <button className="btn" onClick={addQuote}>加入语言库</button>
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: 18 }}>
-        <h3>全部语言（{app.state.quotes.length} 条）</h3>
-        <div className="work-list">
-          {app.state.quotes.map((q) => (
-            <div className="work" key={q.id}>
-              <button
-                className={`check ${q.enabled ? 'on' : ''}`}
-                title={q.enabled ? '点击停用' : '点击启用'}
-                onClick={() => app.patch((st) => ({ ...st, quotes: st.quotes.map((x) => x.id === q.id ? { ...x, enabled: !x.enabled } : x) }))}
-              />
-              <div>
-                <p className="title">{q.content}</p>
-                <p className="meta">
-                  <span className="tag">{KIND_LABEL[q.kind]}</span>
-                  {q.answer ? `答案：${q.answer}` : '启用后会进入推送池'}
-                </p>
-              </div>
-              {confirmQuoteId === q.id ? (
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button
-                    className="btn danger small"
-                    onClick={() => {
-                      setConfirmQuoteId(null)
-                      app.patch((st) => ({ ...st, quotes: st.quotes.filter((x) => x.id !== q.id) }))
-                    }}
-                  >
-                    确认
-                  </button>
-                  <button className="btn ghost small" onClick={() => setConfirmQuoteId(null)}>取消</button>
-                </div>
-              ) : (
-                <button className="btn ghost small" onClick={() => setConfirmQuoteId(q.id)}>删除</button>
-              )}
-            </div>
-          ))}
+      <div className="grid-2-equal">
+        <div className="card">
+          <h3><Keyboard size={15} color="var(--primary)" /> 全局键盘快捷键</h3>
+          <div className="switch">
+            <span className="muted">呼出全局搜索与命令面板</span>
+            <span><kbd className="kbd">Ctrl</kbd> + <kbd className="kbd">K</kbd></span>
+          </div>
+          <div className="switch">
+            <span className="muted">聚焦一句话快速新建框</span>
+            <kbd className="kbd">N</kbd>
+          </div>
+          <div className="switch">
+            <span className="muted">输入框内直接创建 / 展开详细配置</span>
+            <span><kbd className="kbd">Enter</kbd> / <kbd className="kbd">Ctrl+Enter</kbd></span>
+          </div>
+          <div className="switch">
+            <span className="muted">快速切换六大功能页</span>
+            <span><kbd className="kbd">Alt</kbd> + <kbd className="kbd">1 ~ 6</kbd></span>
+          </div>
+          <div className="switch">
+            <span className="muted">关闭弹窗或忽略当前强提醒</span>
+            <kbd className="kbd">Esc</kbd>
+          </div>
+        </div>
+
+        <div className="card">
+          <h3><Database size={15} color="var(--forest)" /> 本地数据备份与迁移</h3>
+          <p className="muted" style={{ marginTop: 0, lineHeight: 1.6 }}>
+            所有数据均安全保存在本地（当前含 {app.state.workItems.length} 项任务、{app.state.reports.length} 份周月报、累计专注 {app.stats.totalFocusMinutes} 分钟）。跨设备迁移或清理浏览器前建议导出备份。
+          </p>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
+            <button className="btn small" onClick={handleExport}>
+              <Download size={13} />
+              导出 JSON 备份
+            </button>
+            <button className="btn ghost small" onClick={() => fileRef.current?.click()}>
+              <Upload size={13} />
+              导入 JSON 恢复
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".json,application/json"
+              style={{ display: 'none' }}
+              onChange={(e) => void handleImportFile(e.target.files?.[0])}
+            />
+          </div>
+          {backupMsg ? (
+            <div className={`status-msg ${backupMsg.ok ? 'ok' : 'err'}`}>{backupMsg.text}</div>
+          ) : null}
         </div>
       </div>
     </>

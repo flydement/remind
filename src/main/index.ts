@@ -48,7 +48,8 @@ function loadState(): AppState {
       quoteSettings: { ...EMPTY_STATE.quoteSettings, ...parsed.quoteSettings },
       settings: { ...EMPTY_STATE.settings, ...parsed.settings },
       reports: parsed.reports ?? [],
-      inbox: parsed.inbox ?? []
+      inbox: parsed.inbox ?? [],
+      focusStats: { ...EMPTY_STATE.focusStats!, ...(parsed.focusStats ?? {}) }
     }
   } catch {
     return {
@@ -121,7 +122,7 @@ function createWindow(): void {
     minHeight: 640,
     title: '小猫工作助手',
     icon: iconImage(),
-    backgroundColor: '#F3EDE3',
+    backgroundColor: state.settings.theme === 'dark' ? '#0B1120' : state.settings.theme === 'paper' ? '#F6F0E6' : '#F4F6F9',
     show: false,
     autoHideMenuBar: true,
     webPreferences: {

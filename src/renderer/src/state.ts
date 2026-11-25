@@ -1,12 +1,52 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AppState, NotifyEvent, WorkItem } from '@shared/types'
+import type { AppState, NotifyEvent, ThemeMode, WorkItem, WorkStatus } from '@shared/types'
 import { EMPTY_STATE } from '@shared/types'
 import { seedHealth, seedQuotes } from '@shared/defaults'
 import { createId } from '@shared/ids'
-import { isPastDue, isSameDay, nowIso } from '@shared/time'
-import { completeWorkItem, rolloverRepeats, snoozeWorkItem, tickScheduler } from '@shared/scheduler'
+import { isPastDue, isSameDay, nowIso, toLocalDate } from '@shared/time'
+import {
+  batchPostponeOverdue,
+  completeWorkItem,
+  isDndActive,
+  recordFocusMinutes,
+  rolloverRepeats,
+  snoozeWorkItem,
+  tickScheduler
+} from '@shared/scheduler'
 import { previewNotifyDate } from '@shared/parser'
-import { showSystemNotify, unlockNotifySound } from './notify'
+import { playFocusChime, showSystemNotify, unlockNotifySound } from './notify'
+
+export interface FlashMessage {
+  id: string
+  title: string
+  body: string
+  source?: 'work' | 'quote' | 'health' | 'info'
+  actionLabel?: string
+  onAction?: () => void
+}
+
+export interface FocusTimerState {
+  active: boolean
+  paused: boolean
+  mode: 'focus' | 'break'
+  totalSeconds: number
+  remainingSeconds: number
+  workId?: string
+}
+
+const IDLE_FOCUS: FocusTimerState = {
+  active: false,
+  paused: false,
+  mode: 'focus',
+  totalSeconds: 25 * 60,
+  remainingSeconds: 25 * 60
+}
+
+const THEME_META_COLOR: Record<ThemeMode, string> = {
+  slate: '#0f172a',
+  paper: '#28221a',
+  dark: '#0b1120'
+}
 
 function fallbackState(): AppState {
   return { ...EMPTY_STATE, quotes: seedQuotes(), health: seedHealth() }
@@ -18,26 +58,33 @@ function hydrate(raw: Partial<AppState> | null | undefined): AppState {
   return {
     ...base,
     ...safe,
-    workItems: Array.isArray(safe.workItems) ? safe.workItems : [],
+    workItems: Array.isArray(safe.workItems)
+      ? safe.workItems.map((w) => ({
+          ...w,
+          tags: Array.isArray(w.tags) ? w.tags : [],
+          priority: w.priority ?? 'medium',
+          subtasks: Array.isArray(w.subtasks) ? w.subtasks : []
+        }))
+      : [],
     quotes: Array.isArray(safe.quotes) && safe.quotes.length ? safe.quotes : base.quotes,
     health: Array.isArray(safe.health) && safe.health.length ? safe.health : base.health,
     quoteSettings: { ...base.quoteSettings, ...(safe.quoteSettings ?? {}) },
     settings: { ...base.settings, ...(safe.settings ?? {}) },
     reports: Array.isArray(safe.reports) ? safe.reports : [],
-    inbox: Array.isArray(safe.inbox) ? safe.inbox : []
+    inbox: Array.isArray(safe.inbox) ? safe.inbox : [],
+    focusStats: { ...base.focusStats!, ...(safe.focusStats ?? {}) }
   }
 }
 
 function mergeWorkItem(s: AppState, item: WorkItem): WorkItem[] {
   const prev = s.workItems.find((w) => w.id === item.id)
   const scheduleChanged = Boolean(
-    prev && (
-      prev.dueAt !== item.dueAt ||
-      prev.notify.enabled !== item.notify.enabled ||
-      prev.notify.advanceDays !== item.notify.advanceDays ||
-      prev.notify.time !== item.notify.time ||
-      prev.notify.frequency !== item.notify.frequency
-    )
+    prev &&
+      (prev.dueAt !== item.dueAt ||
+        prev.notify.enabled !== item.notify.enabled ||
+        prev.notify.advanceDays !== item.notify.advanceDays ||
+        prev.notify.time !== item.notify.time ||
+        prev.notify.frequency !== item.notify.frequency)
   )
   const clean = scheduleChanged
     ? { ...item, notify: { ...item.notify, lastFiredAt: undefined, snoozedUntil: undefined } }
@@ -50,17 +97,27 @@ export function useAppState() {
   const [state, setState] = useState<AppState>(fallbackState)
   const [ready, setReady] = useState(false)
   const [now, setNow] = useState<Date>(() => new Date())
-  const [flash, setFlash] = useState<NotifyEvent | null>(null)
+  const [flash, setFlash] = useState<FlashMessage | null>(null)
   const [reminderQueue, setReminderQueue] = useState<NotifyEvent[]>([])
+  const [focusTimer, setFocusTimer] = useState<FocusTimerState>(IDLE_FOCUS)
+  const focusEndAtRef = useRef<number | null>(null)
   const [notifyPerm, setNotifyPerm] = useState<NotificationPermission>(
     typeof Notification === 'undefined' ? 'denied' : Notification.permission
   )
   const stateRef = useRef(state)
   stateRef.current = state
 
+  const theme: ThemeMode = state.settings.theme ?? 'slate'
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    const meta = document.querySelector('meta[name="theme-color"]')
+    if (meta) meta.setAttribute('content', THEME_META_COLOR[theme])
+  }, [theme])
+
   useEffect(() => {
     const syncNow = (): void => setNow(new Date())
-    const id = window.setInterval(syncNow, 60_000)
+    const id = window.setInterval(syncNow, 30_000)
     const onVisible = (): void => {
       if (!document.hidden) syncNow()
     }
@@ -109,6 +166,28 @@ export function useAppState() {
     [persist]
   )
 
+  const setTheme = useCallback(
+    (nextTheme: ThemeMode) => {
+      patch((s) => ({ ...s, settings: { ...s.settings, theme: nextTheme } }))
+    },
+    [patch]
+  )
+
+  const setDndMinutes = useCallback(
+    (minutes: number) => {
+      const dndUntil =
+        minutes > 0 ? new Date(Date.now() + minutes * 60_000).toISOString() : undefined
+      patch((s) => ({ ...s, settings: { ...s.settings, dndUntil } }))
+      setFlash({
+        id: createId('fl'),
+        title: minutes > 0 ? `已开启勿扰模式（${minutes} 分钟）` : '已退出勿扰模式',
+        body: minutes > 0 ? '勿扰期间将暂停自动弹窗与提示音，可随时恢复。' : '定时通知与提醒已恢复正常。',
+        source: 'info'
+      })
+    },
+    [patch]
+  )
+
   const snoozeReminder = useCallback(
     (workId: string, minutes: number) => {
       patch((s) => snoozeWorkItem(s, workId, minutes))
@@ -125,20 +204,131 @@ export function useAppState() {
     [patch, dismissReminder]
   )
 
-  const announce = useCallback((ev: NotifyEvent, system = true) => {
-    if (ev.modal) {
-      pushReminders([ev])
-      return
+  const announce = useCallback(
+    (ev: NotifyEvent, system = true) => {
+      if (ev.modal) {
+        pushReminders([ev])
+        return
+      }
+      setFlash({ id: ev.id, title: ev.title, body: ev.body, source: ev.source })
+      const next = { ...stateRef.current, inbox: [ev, ...stateRef.current.inbox].slice(0, 100) }
+      void persist(next)
+      if (system) void showSystemNotify(ev, stateRef.current.settings.sound)
+    },
+    [persist, pushReminders]
+  )
+
+  // Wall-clock accurate Focus / Pomodoro timer
+  const startFocus = useCallback(
+    (minutes?: number, workId?: string, mode: 'focus' | 'break' = 'focus') => {
+      unlockNotifySound()
+      const mins = Math.max(1, minutes ?? stateRef.current.settings.focusMinutesDefault ?? 25)
+      const totalSeconds = mins * 60
+      focusEndAtRef.current = Date.now() + totalSeconds * 1000
+      setFocusTimer({
+        active: true,
+        paused: false,
+        mode,
+        totalSeconds,
+        remainingSeconds: totalSeconds,
+        workId
+      })
+      if (mode === 'focus' && workId) {
+        patch((s) => ({
+          ...s,
+          workItems: s.workItems.map((w) =>
+            w.id === workId && w.status === 'todo'
+              ? { ...w, status: 'doing', updatedAt: nowIso() }
+              : w
+          )
+        }))
+      }
+    },
+    [patch]
+  )
+
+  const pauseResumeFocus = useCallback(() => {
+    setFocusTimer((prev) => {
+      if (!prev.active) return prev
+      if (!prev.paused) {
+        const rem = focusEndAtRef.current
+          ? Math.max(1, Math.round((focusEndAtRef.current - Date.now()) / 1000))
+          : prev.remainingSeconds
+        focusEndAtRef.current = null
+        return { ...prev, paused: true, remainingSeconds: rem }
+      }
+      focusEndAtRef.current = Date.now() + prev.remainingSeconds * 1000
+      return { ...prev, paused: false }
+    })
+  }, [])
+
+  const stopFocus = useCallback(() => {
+    focusEndAtRef.current = null
+    setFocusTimer(IDLE_FOCUS)
+  }, [])
+
+  useEffect(() => {
+    if (!focusTimer.active || focusTimer.paused) return
+    const tickFocus = (): void => {
+      const endAt = focusEndAtRef.current
+      if (!endAt) return
+      const rem = Math.max(0, Math.ceil((endAt - Date.now()) / 1000))
+      if (rem > 0) {
+        setFocusTimer((prev) => (prev.remainingSeconds === rem ? prev : { ...prev, remainingSeconds: rem }))
+        return
+      }
+      // Completed!
+      focusEndAtRef.current = null
+      const mins = Math.max(1, Math.round(focusTimer.totalSeconds / 60))
+      const finishedMode = focusTimer.mode
+      const targetWorkId = focusTimer.workId
+      const workTitle = targetWorkId
+        ? stateRef.current.workItems.find((w) => w.id === targetWorkId)?.title
+        : undefined
+      setFocusTimer(IDLE_FOCUS)
+      playFocusChime(stateRef.current.settings.sound)
+
+      if (finishedMode === 'focus') {
+        const updated = recordFocusMinutes(stateRef.current, mins, targetWorkId)
+        const ev: NotifyEvent = {
+          id: createId('nt'),
+          at: nowIso(),
+          title: workTitle ? `专注完成 · ${workTitle}` : `已完成 ${mins} 分钟专注`,
+          body: '起来活动一下眼睛和肩膀，休息 5 分钟再继续吧。',
+          source: 'work',
+          read: false,
+          workId: targetWorkId
+        }
+        const withInbox = { ...updated, inbox: [ev, ...updated.inbox].slice(0, 100) }
+        void persist(withInbox)
+        void showSystemNotify(ev, stateRef.current.settings.sound)
+        setFlash({
+          id: ev.id,
+          title: ev.title,
+          body: ev.body,
+          source: 'work',
+          actionLabel: '休息 5 分钟',
+          onAction: () => startFocus(5, undefined, 'break')
+        })
+      } else {
+        const ev: NotifyEvent = {
+          id: createId('nt'),
+          at: nowIso(),
+          title: '休息结束',
+          body: '状态回满，随时开启下一段专注。',
+          source: 'health',
+          read: false
+        }
+        announce(ev, true)
+      }
     }
-    setFlash(ev)
-    const next = { ...stateRef.current, inbox: [ev, ...stateRef.current.inbox].slice(0, 80) }
-    void persist(next)
-    if (system) void showSystemNotify(ev)
-  }, [persist, pushReminders])
+    const id = window.setInterval(tickFocus, 500)
+    return () => window.clearInterval(id)
+  }, [focusTimer.active, focusTimer.paused, focusTimer.totalSeconds, focusTimer.mode, focusTimer.workId, persist, announce, startFocus])
 
   useEffect(() => {
     if (!flash) return
-    const id = window.setTimeout(() => setFlash(null), 8000)
+    const id = window.setTimeout(() => setFlash(null), 7000)
     return () => window.clearTimeout(id)
   }, [flash])
 
@@ -155,7 +345,9 @@ export function useAppState() {
           const synced = hydrate(next)
           stateRef.current = synced
           setState(synced)
-          if (events[0] && !events[0].modal) setFlash(events[0])
+          if (events[0] && !events[0].modal) {
+            setFlash({ id: events[0].id, title: events[0].title, body: events[0].body, source: events[0].source })
+          }
         })
       } else {
         const raw = localStorage.getItem('rian-state')
@@ -189,9 +381,11 @@ export function useAppState() {
       if (!events.length) return
       pushReminders(events)
       for (const ev of events) {
-        if (!ev.modal) void showSystemNotify(ev)
+        if (!ev.modal) void showSystemNotify(ev, next.settings.sound)
       }
-      if (events[0] && !events[0].modal) setFlash(events[0])
+      if (events[0] && !events[0].modal) {
+        setFlash({ id: events[0].id, title: events[0].title, body: events[0].body, source: events[0].source })
+      }
     }
     const wait = window.setTimeout(tick, 1200)
     const id = window.setInterval(tick, 20_000)
@@ -212,8 +406,8 @@ export function useAppState() {
       announce({
         id: createId('nt'),
         at: nowIso(),
-        title: '通知已打开',
-        body: '到点会在系统托盘弹出提醒。这是一条测试。',
+        title: '通知已就绪',
+        body: '到点将在系统托盘弹出提醒。',
         source: 'health',
         read: false
       })
@@ -227,8 +421,8 @@ export function useAppState() {
     announce({
       id: createId('nt'),
       at: nowIso(),
-      title: '通知已打开',
-      body: '切到别的标签页也会弹出系统通知。请不要关掉小猫工作助手这个标签，关掉后浏览器会停止计时。',
+      title: '浏览器通知已启用',
+      body: '保持当前标签页开启即可在后台接收准点系统提醒。',
       source: 'health',
       read: false
     })
@@ -240,8 +434,8 @@ export function useAppState() {
     announce({
       id: createId('nt'),
       at: nowIso(),
-      title: '小猫工作助手 · 测试提醒',
-      body: '如果你看到这条，说明通知通道是通的。工作项会在提醒日当天弹出。',
+      title: '小猫工作助手 · 通道正常',
+      body: '系统通知与声音提醒测试通过，工作项将按设定计划准时推送。',
       source: 'health',
       read: false
     })
@@ -254,16 +448,16 @@ export function useAppState() {
     [patch]
   )
 
-  const toggleWork = useCallback(
-    (w: WorkItem) => {
-      if (w.status !== 'done') {
-        patch((s) => completeWorkItem(s, w.id))
+  const setWorkStatus = useCallback(
+    (workId: string, status: WorkStatus) => {
+      if (status === 'done') {
+        patch((s) => completeWorkItem(s, workId))
       } else {
         patch((s) => ({
           ...s,
           workItems: s.workItems.map((item) =>
-            item.id === w.id
-              ? { ...item, status: 'todo', completedAt: undefined, updatedAt: nowIso() }
+            item.id === workId
+              ? { ...item, status, completedAt: undefined, updatedAt: nowIso() }
               : item
           )
         }))
@@ -272,40 +466,134 @@ export function useAppState() {
     [patch]
   )
 
-  const deleteWork = useCallback(
+  const toggleWork = useCallback(
+    (w: WorkItem) => {
+      setWorkStatus(w.id, w.status !== 'done' ? 'done' : 'todo')
+    },
+    [setWorkStatus]
+  )
+
+  const togglePinWork = useCallback(
     (workId: string) => {
-      patch((s) => ({ ...s, workItems: s.workItems.filter((x) => x.id !== workId) }))
+      patch((s) => ({
+        ...s,
+        workItems: s.workItems.map((w) =>
+          w.id === workId ? { ...w, pinned: !w.pinned, updatedAt: nowIso() } : w
+        )
+      }))
     },
     [patch]
+  )
+
+  const toggleSubtask = useCallback(
+    (workId: string, subtaskId: string) => {
+      patch((s) => ({
+        ...s,
+        workItems: s.workItems.map((w) => {
+          if (w.id !== workId || !w.subtasks) return w
+          return {
+            ...w,
+            updatedAt: nowIso(),
+            subtasks: w.subtasks.map((st) => (st.id === subtaskId ? { ...st, done: !st.done } : st))
+          }
+        })
+      }))
+    },
+    [patch]
+  )
+
+  const deleteWork = useCallback(
+    (workId: string) => {
+      const target = stateRef.current.workItems.find((x) => x.id === workId)
+      if (!target) return
+      const prevItems = stateRef.current.workItems
+      patch((s) => ({ ...s, workItems: s.workItems.filter((x) => x.id !== workId) }))
+      setFlash({
+        id: createId('fl'),
+        title: `已删除「${target.title}」`,
+        body: '如需恢复可点击撤销。',
+        source: 'info',
+        actionLabel: '撤销',
+        onAction: () => {
+          patch((s) => ({ ...s, workItems: prevItems }))
+          setFlash(null)
+        }
+      })
+    },
+    [patch]
+  )
+
+  const clearCompletedWork = useCallback(() => {
+    const prevItems = stateRef.current.workItems
+    const doneCount = prevItems.filter((w) => w.status === 'done').length
+    if (!doneCount) return
+    patch((s) => ({ ...s, workItems: s.workItems.filter((w) => w.status !== 'done') }))
+    setFlash({
+      id: createId('fl'),
+      title: `已归档清理 ${doneCount} 项已完成事项`,
+      body: '误操作可随时点击撤销恢复。',
+      source: 'info',
+      actionLabel: '撤销',
+      onAction: () => {
+        patch((s) => ({ ...s, workItems: prevItems }))
+        setFlash(null)
+      }
+    })
+  }, [patch])
+
+  const postponeOverdue = useCallback(
+    (days = 1) => {
+      const { state: next, count } = batchPostponeOverdue(stateRef.current, days)
+      if (!count) return
+      void persist(next)
+      setFlash({
+        id: createId('fl'),
+        title: `已顺延 ${count} 项逾期工作`,
+        body: days === 0 ? '截止时间已统一调整至今天 18:00。' : `截止时间已统一顺延至 ${days} 天后。`,
+        source: 'work'
+      })
+    },
+    [persist]
   )
 
   const saveWork = useCallback(
     (item: WorkItem) => {
       const normalized: WorkItem = {
         ...item,
-        title: item.title.trim() || '未命名工作项'
+        title: item.title.trim() || '未命名工作项',
+        priority: item.priority ?? 'medium',
+        tags: item.tags ?? [],
+        subtasks: item.subtasks ?? []
       }
       const dueHint = normalized.notify.enabled
-        ? `系统通知会在 ${previewNotifyDate(normalized.dueAt, normalized.notify.advanceDays, normalized.notify.time)} 弹出，不是保存当下。`
-        : '这件工作项没有打开提醒。'
+        ? `将于 ${previewNotifyDate(normalized.dueAt, normalized.notify.advanceDays, normalized.notify.time)} 准时提醒。`
+        : '已关闭该事项的定时提醒。'
       const ev: NotifyEvent = {
         id: createId('nt'),
         at: nowIso(),
-        title: `已记下「${normalized.title}」`,
+        title: `已保存「${normalized.title}」`,
         body: dueHint,
         source: 'work',
-        read: false
+        read: true,
+        workId: normalized.id
       }
       patch((s) => ({
         ...s,
         workItems: mergeWorkItem(s, normalized),
-        inbox: [ev, ...s.inbox].slice(0, 80)
+        inbox: [ev, ...s.inbox].slice(0, 100)
       }))
-      setFlash(ev)
-      void showSystemNotify(ev)
+      setFlash({ id: ev.id, title: ev.title, body: ev.body, source: 'work' })
     },
     [patch]
   )
+
+  const markAllInboxRead = useCallback(() => {
+    patch((s) => ({ ...s, inbox: s.inbox.map((n) => (n.read ? n : { ...n, read: true })) }))
+  }, [patch])
+
+  const clearInbox = useCallback(() => {
+    patch((s) => ({ ...s, inbox: [] }))
+  }, [patch])
 
   const exportState = useCallback((): string => {
     return JSON.stringify(stateRef.current, null, 2)
@@ -341,22 +629,40 @@ export function useAppState() {
 
   const stats = useMemo(() => {
     const open = state.workItems.filter((w) => w.status !== 'done')
+    const doing = open.filter((w) => w.status === 'doing')
     const dueToday = open.filter((w) => isSameDay(new Date(w.dueAt), now))
     const overdue = open.filter((w) => isPastDue(w.dueAt, now))
+    const todayStr = toLocalDate(now)
+    const todayFocusMinutes =
+      state.focusStats?.todayDate === todayStr ? state.focusStats.todayMinutes : 0
+    const unreadInbox = state.inbox.filter((n) => !n.read).length
+    const dndActive = isDndActive(state.settings, now)
     return {
       open: open.length,
+      doing: doing.length,
       dueToday: dueToday.length,
       overdue: overdue.length,
-      done: state.workItems.filter((w) => w.status === 'done').length
+      done: state.workItems.filter((w) => w.status === 'done').length,
+      todayFocusMinutes,
+      totalFocusMinutes: state.focusStats?.totalMinutes ?? 0,
+      unreadInbox,
+      dndActive
     }
-  }, [state.workItems, now])
+  }, [state.workItems, state.focusStats, state.inbox, state.settings, now])
 
   return {
     state,
+    theme,
+    setTheme,
+    setDndMinutes,
     ready,
     now,
     flash,
     setFlash,
+    focusTimer,
+    startFocus,
+    pauseResumeFocus,
+    stopFocus,
     reminder: reminderQueue[0] ?? null,
     dismissReminder,
     snoozeReminder,
@@ -368,9 +674,16 @@ export function useAppState() {
     persist,
     patch,
     upsertWork,
+    setWorkStatus,
     toggleWork,
+    togglePinWork,
+    toggleSubtask,
     deleteWork,
+    clearCompletedWork,
+    postponeOverdue,
     saveWork,
+    markAllInboxRead,
+    clearInbox,
     exportState,
     importState,
     stats
@@ -387,6 +700,8 @@ export function newWorkItem(partial: Partial<WorkItem>): WorkItem {
     createdAt: t,
     updatedAt: t,
     status: 'todo',
+    priority: 'medium',
+    subtasks: [],
     notify: { enabled: true, advanceDays: 0, time: '09:00', frequency: 'once' },
     repeat: 'none',
     tags: [],

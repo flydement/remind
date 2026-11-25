@@ -1,12 +1,13 @@
 {
   "name": "小猫工作助手",
   "short_name": "小猫工作助手",
-  "description": "工作项提醒、周报月报、语言库与健康小提醒",
+  "description": "结构化工作项管理、智能日程提醒、专注计时与自动周月报",
   "display": "standalone",
   "start_url": ".",
-  "background_color": "#f3ede3",
-  "theme_color": "#c45c3e",
+  "background_color": "#f4f6f9",
+  "theme_color": "#0f172a",
   "icons": [
-    { "src": "icon.png", "sizes": "256x256", "type": "image/png" }
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon.png", "sizes": "256x256", "type": "image/png", "purpose": "any" }
   ]
 }

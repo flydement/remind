@@ -16,23 +16,42 @@ export async function registerNotifyWorker(): Promise<void> {
 }
 
 export function unlockNotifySound(): void {
-  const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  const Ctor =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
   if (!Ctor) return
   audioCtx = audioCtx ?? new Ctor()
-  void audioCtx.resume()
+  if (audioCtx.state === 'suspended') {
+    void audioCtx.resume()
+  }
 }
 
-function beep(): void {
+function playTone(freq: number, startOffset: number, duration: number, gainVal = 0.06): void {
   if (!audioCtx) return
   const osc = audioCtx.createOscillator()
   const gain = audioCtx.createGain()
+  const t0 = audioCtx.currentTime + startOffset
   osc.type = 'sine'
-  osc.frequency.value = 880
-  gain.gain.value = 0.06
+  osc.frequency.setValueAtTime(freq, t0)
+  gain.gain.setValueAtTime(0.0001, t0)
+  gain.gain.exponentialRampToValueAtTime(gainVal, t0 + 0.02)
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration)
   osc.connect(gain)
   gain.connect(audioCtx.destination)
-  osc.start()
-  osc.stop(audioCtx.currentTime + 0.2)
+  osc.start(t0)
+  osc.stop(t0 + duration + 0.02)
+}
+
+function beep(): void {
+  unlockNotifySound()
+  playTone(880, 0, 0.18, 0.06)
+}
+
+export function playFocusChime(enabled = true): void {
+  if (!enabled) return
+  unlockNotifySound()
+  playTone(587.33, 0, 0.18, 0.07)
+  playTone(880, 0.16, 0.28, 0.07)
 }
 
 function flashTitle(text: string): void {
@@ -61,7 +80,7 @@ document.addEventListener('visibilitychange', () => {
   }
 })
 
-export async function showSystemNotify(ev: NotifyEvent): Promise<void> {
+export async function showSystemNotify(ev: NotifyEvent, soundEnabled = true): Promise<void> {
   if (window.rian) {
     await window.rian.notify(ev)
     return
@@ -73,8 +92,8 @@ export async function showSystemNotify(ev: NotifyEvent): Promise<void> {
     body: ev.body,
     tag: ev.source,
     icon,
-    silent: false,
-    requireInteraction: true
+    silent: !soundEnabled,
+    requireInteraction: ev.source === 'work'
   }
 
   try {
@@ -90,7 +109,7 @@ export async function showSystemNotify(ev: NotifyEvent): Promise<void> {
   }
 
   if (document.hidden) {
-    beep()
+    if (soundEnabled) beep()
     flashTitle(ev.title)
   }
 }

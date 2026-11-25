@@ -1,9 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { parseWorkText } from '../src/shared/parser'
-import { completeWorkItem, rolloverRepeats, snoozeWorkItem, tickScheduler } from '../src/shared/scheduler'
+import {
+  batchPostponeOverdue,
+  completeWorkItem,
+  recordFocusMinutes,
+  rolloverRepeats,
+  snoozeWorkItem,
+  tickScheduler
+} from '../src/shared/scheduler'
 import { generateReport, upsertReport } from '../src/shared/reports'
-import { addMonthsClamped, inWorkHours, toLocalDate } from '../src/shared/time'
+import { addMonthsClamped, inWorkHours, nextWorkday, relativeDaysLabel, toLocalDate } from '../src/shared/time'
 import { EMPTY_STATE, type AppState, type WorkItem } from '../src/shared/types'
 import { seedHealth, seedQuotes } from '../src/shared/defaults'
 
@@ -25,6 +32,8 @@ function makeWork(partial: Partial<WorkItem> = {}): WorkItem {
     createdAt: new Date(2026, 7, 1, 9, 0, 0, 0).toISOString(),
     updatedAt: new Date(2026, 7, 1, 9, 0, 0, 0).toISOString(),
     status: 'todo',
+    priority: 'medium',
+    subtasks: [],
     notify: {
       enabled: true,
       advanceDays: 5,
@@ -65,12 +74,40 @@ test('parser: parses Chinese date, advance days, and strips relative tokens from
   assert.equal(d5.notify.time, '20:30')
 })
 
-test('time: addMonthsClamped avoids month-end overflow and inWorkHours supports cross-midnight', () => {
+test('parser: extracts hashtags, priority, bare weekdays, and N-days-later offsets', () => {
+  const now = new Date(2026, 7, 3, 10, 0, 0) // Monday 2026-08-03
+  const d1 = parseWorkText('周五 15:30 架构评审 #研发 #核心 紧急', now)
+  assert.equal(d1.title, '架构评审')
+  assert.equal(toLocalDate(new Date(d1.dueAt)), '2026-08-07')
+  assert.equal(d1.notify.time, '15:30')
+  assert.equal(d1.priority, 'high')
+  assert.deepEqual(d1.tags, ['研发', '核心'])
+
+  const d2 = parseWorkText('3天后 整理归档材料 低优 #行政', now)
+  assert.equal(d2.title, '整理归档材料')
+  assert.equal(toLocalDate(new Date(d2.dueAt)), '2026-08-06')
+  assert.equal(d2.priority, 'low')
+  assert.deepEqual(d2.tags, ['行政'])
+
+  const d3 = parseWorkText('填写工时 每个工作日重复 17:30', now)
+  assert.equal(d3.title, '填写工时')
+  assert.equal(d3.repeat, 'weekdays')
+  assert.equal(d3.notify.time, '17:30')
+})
+
+test('time: addMonthsClamped, nextWorkday, relativeDaysLabel, and cross-midnight inWorkHours', () => {
   const jan31 = new Date(2026, 0, 31, 18, 0, 0)
   assert.equal(toLocalDate(addMonthsClamped(jan31, 1)), '2026-02-28')
 
   const leapJan31 = new Date(2028, 0, 31, 18, 0, 0)
   assert.equal(toLocalDate(addMonthsClamped(leapJan31, 1)), '2028-02-29')
+
+  const fri = new Date(2026, 7, 7, 18, 0, 0) // Friday
+  assert.equal(toLocalDate(nextWorkday(fri)), '2026-08-10') // Monday
+
+  const now = new Date(2026, 7, 10, 12, 0, 0)
+  assert.equal(relativeDaysLabel(new Date(2026, 7, 10, 18, 0, 0).toISOString(), now).text, '今日到期')
+  assert.equal(relativeDaysLabel(new Date(2026, 7, 8, 18, 0, 0).toISOString(), now).tone, 'danger')
 
   assert.equal(inWorkHours(new Date(2026, 7, 1, 23, 30), '22:00', '06:00'), true)
   assert.equal(inWorkHours(new Date(2026, 7, 1, 5, 30), '22:00', '06:00'), true)
@@ -94,22 +131,30 @@ test('scheduler: health reminders do not fire storm on first tick and fire after
   assert.match(second.events[0].title, /看看远处/)
 })
 
-test('scheduler: work reminder fires with workId, supports snooze and complete', () => {
+test('scheduler: work reminder fires with workId, respects DND, and supports snooze and complete', () => {
   const item = makeWork()
+  const t1 = new Date(2026, 7, 6, 9, 0, 0)
+
+  // DND suppresses notifications until expired
+  const dndState = makeState({
+    workItems: [item],
+    health: [],
+    quoteSettings: { ...EMPTY_STATE.quoteSettings, enabled: false },
+    settings: { ...EMPTY_STATE.settings, dndUntil: new Date(2026, 7, 6, 10, 0, 0).toISOString() }
+  })
+  assert.equal(tickScheduler(dndState, t1).events.length, 0)
+
   const base = makeState({
     workItems: [item],
     health: [],
     quoteSettings: { ...EMPTY_STATE.quoteSettings, enabled: false }
   })
 
-  // 2026-08-06 09:00 (5 days before 2026-08-11)
-  const t1 = new Date(2026, 7, 6, 9, 0, 0)
   const res1 = tickScheduler(base, t1)
   assert.equal(res1.events.length, 1)
   assert.equal(res1.events[0].workId, item.id)
   assert.equal(res1.events[0].modal, true)
 
-  // Snooze 10 minutes
   const snoozed = snoozeWorkItem(res1.state, item.id, 10, t1)
   const resBefore = tickScheduler(snoozed, new Date(2026, 7, 6, 9, 5, 0))
   assert.equal(resBefore.events.length, 0)
@@ -120,29 +165,59 @@ test('scheduler: work reminder fires with workId, supports snooze and complete',
   assert.equal(resAfter.state.workItems[0].notify.snoozedUntil, undefined)
 })
 
-test('scheduler: rolloverRepeats works on early completion and clamps month-end', () => {
+test('scheduler: rolloverRepeats supports monthly clamping, weekdays skip, and resets subtasks', () => {
   const monthly = makeWork({
     id: 'wk_m',
     title: '月末结账',
     dueAt: new Date(2026, 0, 31, 18, 0, 0).toISOString(),
-    repeat: 'monthly'
+    repeat: 'monthly',
+    subtasks: [{ id: 's1', title: '核对流水', done: true }]
   })
   const base = makeState({ workItems: [monthly], health: [] })
 
-  // Complete 5 days early (Jan 26)
   const doneState = completeWorkItem(base, 'wk_m', new Date(2026, 0, 26, 15, 0, 0))
   assert.equal(doneState.workItems.length, 2)
   const next = doneState.workItems.find((w) => w.status === 'todo')
   assert.ok(next)
   assert.equal(toLocalDate(new Date(next.dueAt)), '2026-02-28')
+  assert.equal(next.subtasks?.[0].done, false)
 
-  // Running rolloverRepeats again must not create duplicates
   const again = rolloverRepeats(doneState, new Date(2026, 0, 27, 9, 0, 0))
   assert.equal(again.workItems.length, 2)
+
+  // Weekdays repeat on Friday rolls to Monday
+  const friTask = makeWork({
+    id: 'wk_fri',
+    title: '日报',
+    dueAt: new Date(2026, 7, 7, 18, 0, 0).toISOString(),
+    repeat: 'weekdays'
+  })
+  const friDone = completeWorkItem(makeState({ workItems: [friTask], health: [] }), 'wk_fri', new Date(2026, 7, 7, 18, 5, 0))
+  const nextMon = friDone.workItems.find((w) => w.status === 'todo')
+  assert.ok(nextMon)
+  assert.equal(toLocalDate(new Date(nextMon.dueAt)), '2026-08-10')
 })
 
-test('reports: includes carryover overdue items and deduplicates same-period upsert', () => {
-  const now = new Date(2026, 7, 12, 12, 0, 0) // Wed 2026-08-12
+test('scheduler: batchPostponeOverdue and recordFocusMinutes update state accurately', () => {
+  const now = new Date(2026, 7, 12, 12, 0, 0)
+  const overdueItem = makeWork({
+    id: 'wk_ov',
+    title: '逾期方案',
+    dueAt: new Date(2026, 7, 10, 18, 0, 0).toISOString()
+  })
+  const state = makeState({ workItems: [overdueItem], health: [] })
+  const postponed = batchPostponeOverdue(state, 1, now)
+  assert.equal(postponed.count, 1)
+  assert.equal(toLocalDate(new Date(postponed.state.workItems[0].dueAt)), '2026-08-13')
+
+  const focused = recordFocusMinutes(postponed.state, 25, 'wk_ov', now)
+  assert.equal(focused.focusStats?.todayMinutes, 25)
+  assert.equal(focused.focusStats?.totalMinutes, 25)
+  assert.equal(focused.workItems[0].focusMinutes, 25)
+})
+
+test('reports: supports executive/concise/warm styles, carryover overdue items, and deduplicates upsert', () => {
+  const now = new Date(2026, 7, 12, 12, 0, 0)
   const oldOverdue = makeWork({
     id: 'wk_old',
     title: '上周遗留',
@@ -153,17 +228,25 @@ test('reports: includes carryover overdue items and deduplicates same-period ups
     id: 'wk_done',
     title: '本周完成项',
     status: 'done',
+    priority: 'high',
+    tags: ['交付'],
+    focusMinutes: 50,
     dueAt: new Date(2026, 7, 11, 18, 0, 0).toISOString(),
     createdAt: new Date(2026, 7, 10, 9, 0, 0).toISOString(),
     completedAt: new Date(2026, 7, 11, 16, 0, 0).toISOString()
   })
   const state = makeState({ workItems: [oldOverdue, doneThisWeek], health: [] })
 
-  const report = generateReport(state, 'weekly', now)
-  assert.equal(report.stats.done, 1)
-  assert.equal(report.stats.overdue, 1)
-  assert.match(report.body, /上周遗留/)
-  assert.match(report.body, /本周完成项/)
+  const execReport = generateReport(state, 'weekly', now, 'executive')
+  assert.equal(execReport.stats.done, 1)
+  assert.equal(execReport.stats.overdue, 1)
+  assert.equal(execReport.stats.completionRate, 50)
+  assert.match(execReport.body, /上周遗留/)
+  assert.match(execReport.body, /本周完成项/)
+  assert.match(execReport.body, /累计专注投入 50 分钟/)
+
+  const conciseReport = generateReport(state, 'weekly', now, 'concise')
+  assert.match(conciseReport.body, /完成率 50%/)
 
   const s1 = upsertReport(state, 'weekly', now)
   const s2 = upsertReport(s1, 'weekly', now)

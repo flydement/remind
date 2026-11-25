@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="48" y1="32" x2="464" y2="480" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#17253B"/>
+      <stop offset="55%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#090E1A"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="120" y1="120" x2="392" y2="392" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F1F5F9"/>
+      <stop offset="100%" stop-color="#94A3B8"/>
+    </linearGradient>
+    <linearGradient id="check" x1="176" y1="312" x2="392" y2="148" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="55%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#38BDF8"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="356" cy="148" r="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#38BDF8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <!-- Squircle Base -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#glow)"/>
+  <rect x="18" y="18" width="476" height="476" rx="110" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="4"/>
+
+  <!-- Subtle Architectural Grid / Cardinal Ticks -->
+  <line x1="256" y1="74" x2="256" y2="96" stroke="#64748B" stroke-width="10" stroke-linecap="round" opacity="0.65"/>
+  <line x1="256" y1="416" x2="256" y2="438" stroke="#64748B" stroke-width="10" stroke-linecap="round" opacity="0.65"/>
+  <line x1="74" y1="256" x2="96" y2="256" stroke="#64748B" stroke-width="10" stroke-linecap="round" opacity="0.65"/>
+  <line x1="416" y1="256" x2="438" y2="256" stroke="#64748B" stroke-width="10" stroke-linecap="round" opacity="0.65"/>
+
+  <!-- Precision Chronometer Open Arc (from -12 deg clockwise to -66 deg) -->
+  <path d="M 400.8 225.2 A 148 148 0 1 1 316.2 120.8" stroke="url(#ring)" stroke-width="30" stroke-linecap="round"/>
+
+  <!-- Bold Geometric Checkmark Breaking Through Arc -->
+  <path d="M 186 262 L 238 314 L 376 166" stroke="url(#check)" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Amber Reminder Pulse Anchor -->
+  <circle cx="388" cy="114" r="17" fill="#F59E0B"/>
+</svg>

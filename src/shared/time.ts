@@ -69,6 +69,14 @@ export function addDays(d: Date, n: number): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n, d.getHours(), d.getMinutes(), 0, 0)
 }
 
+export function nextWorkday(d: Date): Date {
+  let next = addDays(d, 1)
+  while (next.getDay() === 0 || next.getDay() === 6) {
+    next = addDays(next, 1)
+  }
+  return next
+}
+
 export function addMonthsClamped(d: Date, months: number): Date {
   const totalMonths = d.getFullYear() * 12 + d.getMonth() + months
   const year = Math.floor(totalMonths / 12)
@@ -96,6 +104,30 @@ export function inWorkHours(now: Date, start: string, end: string): boolean {
 export function isPastDue(dueAt: string, now = new Date()): boolean {
   const t = new Date(dueAt).getTime()
   return Number.isFinite(t) && t < now.getTime()
+}
+
+export function relativeDaysLabel(
+  dueAt: string,
+  now = new Date()
+): { text: string; tone: 'danger' | 'warn' | 'accent' | 'neutral' } {
+  const due = new Date(dueAt)
+  if (!Number.isFinite(due.getTime())) return { text: '未知日期', tone: 'neutral' }
+  const dueStart = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const diffDays = Math.round((dueStart - todayStart) / 86_400_000)
+
+  if (isPastDue(dueAt, now)) {
+    const over = Math.max(0, -diffDays)
+    return {
+      text: over === 0 ? '今日已逾时' : `逾期 ${over} 天`,
+      tone: 'danger'
+    }
+  }
+  if (diffDays === 0) return { text: '今日到期', tone: 'warn' }
+  if (diffDays === 1) return { text: '明天截止', tone: 'accent' }
+  if (diffDays === 2) return { text: '后天截止', tone: 'neutral' }
+  if (diffDays > 2 && diffDays <= 7) return { text: `${diffDays} 天后`, tone: 'neutral' }
+  return { text: formatDateCn(due), tone: 'neutral' }
 }
 
 export function minutesBetween(a: Date, b: Date): number {
