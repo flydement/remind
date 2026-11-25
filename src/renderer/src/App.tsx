@@ -23,6 +23,7 @@ import { pad2, weekdayCn } from '@shared/time'
 import { useAppState } from './state'
 import logoSvg from './assets/logo.svg'
 import CommandPalette from './components/CommandPalette'
+import ExportExcelModal from './components/ExportExcelModal'
 import WorkEditor from './components/WorkEditor'
 import TodayPage from './pages/TodayPage'
 import WorkPage from './pages/WorkPage'
@@ -52,6 +53,7 @@ export default function App() {
   const [page, setPage] = useState<PageId>('today')
   const [cmdOpen, setCmdOpen] = useState(false)
   const [globalEditing, setGlobalEditing] = useState<WorkItem | null>(null)
+  const [globalExcelOpen, setGlobalExcelOpen] = useState(false)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -336,6 +338,13 @@ export default function App() {
         app={app}
         go={setPage}
         onEditWork={(w) => setGlobalEditing(w)}
+        onOpenExcel={() => setGlobalExcelOpen(true)}
+      />
+
+      <ExportExcelModal
+        open={globalExcelOpen}
+        app={app}
+        onClose={() => setGlobalExcelOpen(false)}
       />
 
       {globalEditing ? (

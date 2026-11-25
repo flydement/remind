@@ -9,6 +9,7 @@ import {
   Download,
   Edit3,
   FilePlus2,
+  FileSpreadsheet,
   Percent,
   RefreshCw,
   Save
@@ -17,6 +18,7 @@ import type { ReportKind, ReportStyle } from '@shared/types'
 import { periodOf, upsertReport } from '@shared/reports'
 import { addDays, addMonthsClamped, formatDateTimeCn, toLocalDate } from '@shared/time'
 import PageHead from '../components/PageHead'
+import ExportExcelModal from '../components/ExportExcelModal'
 import type { useAppState } from '../state'
 
 async function copyText(text: string): Promise<boolean> {
@@ -50,6 +52,7 @@ export default function ReportsPage({ app }: { app: ReturnType<typeof useAppStat
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [editingBody, setEditingBody] = useState<string | null>(null)
+  const [excelOpen, setExcelOpen] = useState(false)
 
   const targetDate = useMemo(() => {
     if (offset === 0) return app.now
@@ -138,6 +141,12 @@ export default function ReportsPage({ app }: { app: ReturnType<typeof useAppStat
       <PageHead
         title="周报与月报"
         sub="自动汇总选定周期内的完成事项、推进状态、子步骤进度与风险提示，支持三种汇报模板与在线修订。"
+        right={
+          <button className="btn ghost small" onClick={() => setExcelOpen(true)}>
+            <FileSpreadsheet size={13} color="var(--forest)" />
+            导出 Excel 台账
+          </button>
+        }
       />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -289,6 +298,12 @@ export default function ReportsPage({ app }: { app: ReturnType<typeof useAppStat
           尚未生成 {periodLabel} 的{kind === 'weekly' ? '周报' : '月报'}。点击右上角「生成该期报告」即可一键汇总草稿。
         </div>
       )}
+      <ExportExcelModal
+        open={excelOpen}
+        initialDate={targetDate}
+        app={app}
+        onClose={() => setExcelOpen(false)}
+      />
     </>
   )
 }

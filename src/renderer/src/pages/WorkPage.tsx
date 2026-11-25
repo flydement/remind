@@ -4,6 +4,7 @@ import {
   Check,
   Columns3,
   FastForward,
+  FileSpreadsheet,
   LayoutList,
   Play,
   RotateCcw,
@@ -20,6 +21,7 @@ import PageHead from '../components/PageHead'
 import { newWorkItem, type useAppState } from '../state'
 import WorkEditor from '../components/WorkEditor'
 import WorkList from '../components/WorkList'
+import ExportExcelModal from '../components/ExportExcelModal'
 
 type Filter = 'open' | 'doing' | 'today' | 'overdue' | 'done' | 'all'
 type ViewMode = 'list' | 'kanban'
@@ -33,6 +35,7 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
   const [query, setQuery] = useState('')
   const [text, setText] = useState('')
   const [editing, setEditing] = useState<WorkItem | null>(null)
+  const [excelOpen, setExcelOpen] = useState(false)
   const draft = useMemo(() => parseWorkText(text, app.now), [text, app.now])
 
   const allTags = useMemo(() => {
@@ -69,8 +72,8 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
       }
       if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1
       if (mode === 'priority') {
-        const pa = a.priority === 'high' ? 0 : a.priority === 'low' ? 2 : 1
-        const pb = b.priority === 'high' ? 0 : b.priority === 'low' ? 2 : 1
+        const pa = a.priority === 'high' ? 0 : 1
+        const pb = b.priority === 'high' ? 0 : 1
         if (pa !== pb) return pa - pb
       } else if (mode === 'created') {
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -147,7 +150,13 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
         onClick={() => setEditing(w)}
       >
         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 6 }}>
-          {w.priority === 'high' ? <span className="tag danger">高优</span> : null}
+          {col !== 'done' ? (
+            w.priority === 'high' ? (
+              <span className="tag danger">重点</span>
+            ) : (
+              <span className="tag">一般</span>
+            )
+          ) : null}
           {rel ? (
             <span className={`tag ${rel.tone === 'danger' ? 'danger' : rel.tone === 'warn' ? 'warn' : rel.tone === 'accent' ? 'accent' : ''}`}>
               {rel.text}
@@ -208,7 +217,14 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
         title="工作事项"
         sub="支持自然语言快速录入、标签筛选、子步骤拆解，以及列表 / 看板双视图切换。"
         right={
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button
+              className="chip"
+              onClick={() => setExcelOpen(true)}
+              title="按标准模板导出本月完成情况与下月计划 Excel (.xlsx)"
+            >
+              <FileSpreadsheet size={13} color="var(--forest)" /> 导出 Excel
+            </button>
             <button
               className={`chip ${view === 'list' ? 'on' : ''}`}
               onClick={() => setView('list')}
@@ -232,7 +248,7 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
             <input
               data-quick-composer="true"
               value={text}
-              placeholder="例如：月报 8月11号 提前5天通知 #财务 紧急（回车极速创建，Ctrl+回车详细配置）"
+              placeholder="例如：月报 8月11号 提前5天通知 #财务 重点（回车极速创建，Ctrl+回车详细配置）"
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -261,7 +277,7 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
           </div>
         ) : (
           <p className="muted" style={{ margin: '9px 0 0' }}>
-            支持语法：明天 / 3天后 / 周五 / 下周三 15:30 / 每月11号 提前5天 / #标签 / 紧急 / 低优
+            支持语法：明天 / 3天后 / 周五 / 下周三 15:30 / 每月11号 提前5天 / #标签 / 重点 / 一般
           </p>
         )}
       </div>
@@ -438,6 +454,11 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
           }
         />
       ) : null}
+      <ExportExcelModal
+        open={excelOpen}
+        app={app}
+        onClose={() => setExcelOpen(false)}
+      />
     </>
   )
 }

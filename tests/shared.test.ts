@@ -10,6 +10,7 @@ import {
   tickScheduler
 } from '../src/shared/scheduler'
 import { generateReport, upsertReport } from '../src/shared/reports'
+import { buildExcelFilename, collectMonthlyExcelPlan, generateWorkExcelBytes } from '../src/shared/excel'
 import { addMonthsClamped, inWorkHours, nextWorkday, relativeDaysLabel, toLocalDate } from '../src/shared/time'
 import { EMPTY_STATE, type AppState, type WorkItem } from '../src/shared/types'
 import { seedHealth, seedQuotes } from '../src/shared/defaults'
@@ -32,7 +33,7 @@ function makeWork(partial: Partial<WorkItem> = {}): WorkItem {
     createdAt: new Date(2026, 7, 1, 9, 0, 0, 0).toISOString(),
     updatedAt: new Date(2026, 7, 1, 9, 0, 0, 0).toISOString(),
     status: 'todo',
-    priority: 'medium',
+    priority: 'normal',
     subtasks: [],
     notify: {
       enabled: true,
@@ -76,17 +77,17 @@ test('parser: parses Chinese date, advance days, and strips relative tokens from
 
 test('parser: extracts hashtags, priority, bare weekdays, and N-days-later offsets', () => {
   const now = new Date(2026, 7, 3, 10, 0, 0) // Monday 2026-08-03
-  const d1 = parseWorkText('周五 15:30 架构评审 #研发 #核心 紧急', now)
+  const d1 = parseWorkText('周五 15:30 架构评审 #研发 #核心 重点', now)
   assert.equal(d1.title, '架构评审')
   assert.equal(toLocalDate(new Date(d1.dueAt)), '2026-08-07')
   assert.equal(d1.notify.time, '15:30')
   assert.equal(d1.priority, 'high')
   assert.deepEqual(d1.tags, ['研发', '核心'])
 
-  const d2 = parseWorkText('3天后 整理归档材料 低优 #行政', now)
+  const d2 = parseWorkText('3天后 整理归档材料 一般 #行政', now)
   assert.equal(d2.title, '整理归档材料')
   assert.equal(toLocalDate(new Date(d2.dueAt)), '2026-08-06')
-  assert.equal(d2.priority, 'low')
+  assert.equal(d2.priority, 'normal')
   assert.deepEqual(d2.tags, ['行政'])
 
   const d3 = parseWorkText('填写工时 每个工作日重复 17:30', now)
@@ -242,7 +243,7 @@ test('reports: supports executive/concise/warm styles, carryover overdue items, 
   assert.equal(execReport.stats.overdue, 1)
   assert.equal(execReport.stats.completionRate, 50)
   assert.match(execReport.body, /上周遗留/)
-  assert.match(execReport.body, /本周完成项/)
+  assert.match(execReport.body, /【重点】本周完成项/)
   assert.match(execReport.body, /累计专注投入 50 分钟/)
 
   const conciseReport = generateReport(state, 'weekly', now, 'concise')
@@ -251,4 +252,68 @@ test('reports: supports executive/concise/warm styles, carryover overdue items, 
   const s1 = upsertReport(state, 'weekly', now)
   const s2 = upsertReport(s1, 'weekly', now)
   assert.equal(s2.reports.length, 1)
+})
+
+test('excel: groups completed & planned tasks into 重点/一般 and generates valid xlsx archive', () => {
+  const ref = new Date(2026, 10, 25, 12, 0, 0) // 2026-11-25
+  const items: WorkItem[] = [
+    makeWork({
+      id: 'd_k1',
+      title: '核心系统升级',
+      status: 'done',
+      priority: 'high',
+      assignee: '张三',
+      notes: '已上线',
+      dueAt: new Date(2026, 10, 15, 18, 0, 0).toISOString(),
+      completedAt: new Date(2026, 10, 14, 17, 0, 0).toISOString()
+    }),
+    makeWork({
+      id: 'd_n1',
+      title: '常规巡检归档',
+      status: 'done',
+      priority: 'normal',
+      dueAt: new Date(2026, 10, 20, 18, 0, 0).toISOString(),
+      completedAt: new Date(2026, 10, 20, 16, 0, 0).toISOString()
+    }),
+    makeWork({
+      id: 'p_k1',
+      title: '年度架构规划',
+      status: 'todo',
+      priority: 'high',
+      dueAt: new Date(2026, 11, 10, 18, 0, 0).toISOString()
+    }),
+    makeWork({
+      id: 'p_n1',
+      title: '跨月跟进事项',
+      status: 'doing',
+      priority: 'normal',
+      dueAt: new Date(2026, 10, 28, 18, 0, 0).toISOString()
+    })
+  ]
+
+  const plan = collectMonthlyExcelPlan(items, {
+    monthDate: ref,
+    department: '研发部',
+    defaultOwner: '李四',
+    carryOverOpen: true
+  })
+  assert.equal(plan.curMonth, 11)
+  assert.equal(plan.nextMonth, 12)
+  assert.equal(plan.doneKey.length, 1)
+  assert.equal(plan.doneNormal.length, 1)
+  assert.equal(plan.planKey.length, 1)
+  assert.equal(plan.planNormal.length, 1)
+
+  const bytes = generateWorkExcelBytes(items, {
+    monthDate: ref,
+    department: '研发部',
+    defaultOwner: '李四',
+    carryOverOpen: true
+  })
+  assert.equal(bytes[0], 0x50) // 'P'
+  assert.equal(bytes[1], 0x4b) // 'K'
+  assert.ok(bytes.byteLength > 1500)
+
+  const filename = buildExcelFilename({ monthDate: ref, department: '研发部' })
+  assert.equal(filename, '研发部-2026年11月工作完成情况及12月工作计划.xlsx')
 })

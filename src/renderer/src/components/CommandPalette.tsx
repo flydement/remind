@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ClipboardList,
   CornerDownLeft,
+  FileSpreadsheet,
   HeartPulse,
   LayoutDashboard,
   Moon,
@@ -35,13 +36,15 @@ export default function CommandPalette({
   onClose,
   app,
   go,
-  onEditWork
+  onEditWork,
+  onOpenExcel
 }: {
   open: boolean
   onClose: () => void
   app: ReturnType<typeof useAppState>
   go: (p: PageId) => void
   onEditWork: (w: WorkItem) => void
+  onOpenExcel: () => void
 }) {
   const [query, setQuery] = useState('')
   const [activeIdx, setActiveIdx] = useState(0)
@@ -81,6 +84,14 @@ export default function CommandPalette({
           if (app.focusTimer.active) app.stopFocus()
           else app.startFocus(25)
         }
+      },
+      {
+        id: 'act-export-excel',
+        group: '快捷操作',
+        title: '导出月度工作台账 Excel (.xlsx)',
+        hint: '按重点 / 一般工作分组导出',
+        icon: FileSpreadsheet,
+        run: () => onOpenExcel()
       },
       {
         id: 'act-weekly-report',
@@ -216,7 +227,7 @@ export default function CommandPalette({
         e.group.toLowerCase().includes(q) ||
         (e.hint?.toLowerCase().includes(q) ?? false)
     )
-  }, [app, go, onEditWork, query])
+  }, [app, go, onEditWork, onOpenExcel, query])
 
   useEffect(() => {
     setActiveIdx(0)

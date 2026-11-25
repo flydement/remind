@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, Notification, Tray, Menu, nativeImage, shell, screen } from 'electron'
 import { join, dirname } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { EMPTY_STATE, type AppState, type NotifyEvent } from '../shared/types'
+import { EMPTY_STATE, normalizePriority, type AppState, type NotifyEvent } from '../shared/types'
 import { seedHealth, seedQuotes } from '../shared/defaults'
 import { completeWorkItem, rolloverRepeats, snoozeWorkItem, tickScheduler } from '../shared/scheduler'
 
@@ -42,7 +42,10 @@ function loadState(): AppState {
     return {
       ...EMPTY_STATE,
       ...parsed,
-      workItems: parsed.workItems ?? [],
+      workItems: (parsed.workItems ?? []).map((w) => ({
+        ...w,
+        priority: normalizePriority(w.priority)
+      })),
       quotes: parsed.quotes?.length ? parsed.quotes : seedQuotes(),
       health: parsed.health?.length ? parsed.health : seedHealth(),
       quoteSettings: { ...EMPTY_STATE.quoteSettings, ...parsed.quoteSettings },

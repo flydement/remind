@@ -41,7 +41,7 @@ function rateLine(done: number, total: number, style: ReportStyle): string {
 
 function formatWorkRow(w: WorkItem, includeStatus = false): string {
   const tags = w.tags.length ? ` [${w.tags.map((t) => `#${t}`).join(' ')}]` : ''
-  const prio = w.priority === 'high' ? '【高优】' : ''
+  const prio = w.priority === 'high' ? '【重点】' : ''
   const sub = w.subtasks?.length
     ? `（子进度 ${w.subtasks.filter((s) => s.done).length}/${w.subtasks.length}）`
     : ''
@@ -82,8 +82,8 @@ export function generateReport(
     if (!arr.length) return empty
     return [...arr]
       .sort((a, b) => {
-        const pa = a.priority === 'high' ? 0 : a.priority === 'low' ? 2 : 1
-        const pb = b.priority === 'high' ? 0 : b.priority === 'low' ? 2 : 1
+        const pa = a.priority === 'high' ? 0 : 1
+        const pb = b.priority === 'high' ? 0 : 1
         if (pa !== pb) return pa - pb
         return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()
       })

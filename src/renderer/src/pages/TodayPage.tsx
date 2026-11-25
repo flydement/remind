@@ -21,7 +21,7 @@ import WorkList from '../components/WorkList'
 
 const SAMPLES = [
   '月报 8月11号 提前5天通知 #汇报',
-  '周五 下午3点半 架构评审 紧急',
+  '周五 下午3点半 架构评审 重点',
   '3天后 提交季度预算 #财务'
 ]
 
@@ -47,8 +47,8 @@ export default function TodayPage({
         .filter((w) => w.status !== 'done')
         .sort((a, b) => {
           if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1
-          const pa = a.priority === 'high' ? 0 : a.priority === 'low' ? 2 : 1
-          const pb = b.priority === 'high' ? 0 : b.priority === 'low' ? 2 : 1
+          const pa = a.priority === 'high' ? 0 : 1
+          const pb = b.priority === 'high' ? 0 : 1
           const da = new Date(a.dueAt).getTime()
           const db = new Date(b.dueAt).getTime()
           if (Math.abs(da - db) < 3600_000 && pa !== pb) return pa - pb
@@ -172,7 +172,7 @@ export default function TodayPage({
             <input
               data-quick-composer="true"
               value={text}
-              placeholder="输入事项后回车直接创建，例如：周五 15:30 架构评审 #研发 紧急"
+              placeholder="输入事项后回车直接创建，例如：周五 15:30 架构评审 #研发 重点"
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {

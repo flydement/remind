@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AppState, NotifyEvent, ThemeMode, WorkItem, WorkStatus } from '@shared/types'
-import { EMPTY_STATE } from '@shared/types'
+import { EMPTY_STATE, normalizePriority } from '@shared/types'
 import { seedHealth, seedQuotes } from '@shared/defaults'
 import { createId } from '@shared/ids'
 import { isPastDue, isSameDay, nowIso, toLocalDate } from '@shared/time'
@@ -62,7 +62,7 @@ function hydrate(raw: Partial<AppState> | null | undefined): AppState {
       ? safe.workItems.map((w) => ({
           ...w,
           tags: Array.isArray(w.tags) ? w.tags : [],
-          priority: w.priority ?? 'medium',
+          priority: normalizePriority(w.priority),
           subtasks: Array.isArray(w.subtasks) ? w.subtasks : []
         }))
       : [],
@@ -561,7 +561,7 @@ export function useAppState() {
       const normalized: WorkItem = {
         ...item,
         title: item.title.trim() || '未命名工作项',
-        priority: item.priority ?? 'medium',
+        priority: normalizePriority(item.priority),
         tags: item.tags ?? [],
         subtasks: item.subtasks ?? []
       }
@@ -700,7 +700,7 @@ export function newWorkItem(partial: Partial<WorkItem>): WorkItem {
     createdAt: t,
     updatedAt: t,
     status: 'todo',
-    priority: 'medium',
+    priority: 'normal',
     subtasks: [],
     notify: { enabled: true, advanceDays: 0, time: '09:00', frequency: 'once' },
     repeat: 'none',

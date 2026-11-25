@@ -68,8 +68,13 @@ export default function WorkList({
               <div className="title" onClick={() => onOpen(w)} style={{ cursor: 'pointer' }}>
                 {w.pinned && !isDone ? <Pin size={13} color="var(--primary)" /> : null}
                 <span className="title-text">{w.title}</span>
-                {w.priority === 'high' && !isDone ? <span className="tag danger">高优</span> : null}
-                {w.priority === 'low' && !isDone ? <span className="tag">低优</span> : null}
+                {!isDone ? (
+                  w.priority === 'high' ? (
+                    <span className="tag danger">重点</span>
+                  ) : (
+                    <span className="tag">一般</span>
+                  )
+                ) : null}
                 {isDoing ? <span className="tag primary">进行中</span> : null}
                 {rel ? (
                   <span className={`tag ${rel.tone === 'danger' ? 'danger' : rel.tone === 'warn' ? 'warn' : rel.tone === 'accent' ? 'accent' : ''}`}>

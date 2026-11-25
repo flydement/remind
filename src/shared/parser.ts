@@ -101,27 +101,22 @@ function parseTags(raw: string): { tags: string[]; cleaned: string } {
 }
 
 function parsePriority(raw: string): { priority: WorkPriority; used: boolean; cleaned: string } {
-  let priority: WorkPriority = 'medium'
+  let priority: WorkPriority = 'normal'
   let used = false
   let cleaned = raw
 
-  const highRe = /(?:^|[\s，,。.\[【])(紧急|加急|高优|高优先级|P0|P1)(?=$|[\s，,。.\]】])/gi
-  const lowRe = /(?:^|[\s，,。.\[【])(低优|低优先级|不急|次要|P3)(?=$|[\s，,。.\]】])/gi
-  const medRe = /(?:^|[\s，,。.\[【])(中优|普通优先级|P2)(?=$|[\s，,。.\]】])/gi
+  const highRe = /(?<=^|[\s，,。.\[【])(重点|重要|紧急|加急|高优|高优先级|P0|P1)(?=$|[\s，,。.\]】])/gi
+  const normalRe = /(?<=^|[\s，,。.\[【])(一般|一般优先级|普通|普通优先级|中优|低优|低优先级|不急|次要|P2|P3)(?=$|[\s，,。.\]】])/gi
   const bangRe = /(!{2,}|！{2,})/g
 
   if (highRe.test(cleaned) || bangRe.test(cleaned)) {
     priority = 'high'
     used = true
     cleaned = cleaned.replace(highRe, ' ').replace(bangRe, ' ')
-  } else if (lowRe.test(cleaned)) {
-    priority = 'low'
+  } else if (normalRe.test(cleaned)) {
+    priority = 'normal'
     used = true
-    cleaned = cleaned.replace(lowRe, ' ')
-  } else if (medRe.test(cleaned)) {
-    priority = 'medium'
-    used = true
-    cleaned = cleaned.replace(medRe, ' ')
+    cleaned = cleaned.replace(normalRe, ' ')
   }
 
   cleaned = cleaned.replace(/\[\s*\]|【\s*】/g, ' ')
@@ -238,14 +233,14 @@ export function parseWorkText(input: string, now = new Date()): ParsedWorkDraft 
     return {
       title: '',
       dueAt: addDays(now, 1).toISOString(),
-      priority: 'medium',
+      priority: 'normal',
       tags: [],
       notify: { enabled: true, advanceDays: 0, time: '09:00', frequency: 'once' },
       repeat: 'none',
       notes: '',
       sourceText,
       confidence: 0,
-      hints: ['请输入工作项，例如：月报 8月11号 提前5天通知 #财务 紧急']
+      hints: ['请输入工作项，例如：月报 8月11号 提前5天通知 #财务 重点']
     }
   }
 
@@ -349,18 +344,17 @@ export function describeDraft(draft: ParsedWorkDraft): string {
     monthly: '每月重复'
   }
   const prioLabel: Record<WorkPriority, string> = {
-    high: '高优先级',
-    medium: '普通优先级',
-    low: '低优先级'
+    high: '重点',
+    normal: '一般'
   }
   const parts = [
     `工作项「${draft.title}」`,
     `截止 ${due.getMonth() + 1}月${due.getDate()}日`,
     `提醒日 ${notifyDay.getMonth() + 1}月${notifyDay.getDate()}日 ${draft.notify.time}`,
-    freqLabel[draft.notify.frequency]
+    freqLabel[draft.notify.frequency],
+    `优先级：${prioLabel[draft.priority]}`
   ]
   if (draft.repeat !== 'none') parts.push(repeatLabel[draft.repeat])
-  if (draft.priority !== 'medium') parts.push(prioLabel[draft.priority])
   if (draft.tags.length) parts.push(draft.tags.map((t) => `#${t}`).join(' '))
   return parts.join(' · ')
 }

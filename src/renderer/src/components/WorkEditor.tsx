@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Pin, Play, Plus, Trash2, X } from 'lucide-react'
-import type { NotifyFrequency, RepeatRule, SubtaskItem, WorkItem, WorkPriority, WorkStatus } from '@shared/types'
+import { normalizePriority, type NotifyFrequency, type RepeatRule, type SubtaskItem, type WorkItem, type WorkPriority, type WorkStatus } from '@shared/types'
 import { createId } from '@shared/ids'
 import { previewNotifyDate } from '@shared/parser'
 import { pad2 } from '@shared/time'
@@ -27,7 +27,7 @@ export default function WorkEditor({
 }) {
   const [draft, setDraft] = useState<WorkItem>({
     ...item,
-    priority: item.priority ?? 'medium',
+    priority: normalizePriority(item.priority),
     tags: item.tags ?? [],
     subtasks: item.subtasks ?? []
   })
@@ -37,7 +37,7 @@ export default function WorkEditor({
   useEffect(() => {
     setDraft({
       ...item,
-      priority: item.priority ?? 'medium',
+      priority: normalizePriority(item.priority),
       tags: item.tags ?? [],
       subtasks: item.subtasks ?? []
     })
@@ -176,12 +176,11 @@ export default function WorkEditor({
           <div className="field">
             <label>优先级</label>
             <select
-              value={draft.priority ?? 'medium'}
+              value={draft.priority ?? 'normal'}
               onChange={(e) => setDraft({ ...draft, priority: e.target.value as WorkPriority })}
             >
-              <option value="high">高优先级（紧急）</option>
-              <option value="medium">普通优先级</option>
-              <option value="low">低优先级（次要）</option>
+              <option value="normal">一般</option>
+              <option value="high">重点</option>
             </select>
           </div>
           <div className="field">
@@ -204,6 +203,14 @@ export default function WorkEditor({
               <option value="weekly">每周重复</option>
               <option value="monthly">每月重复</option>
             </select>
+          </div>
+          <div className="field" style={{ gridColumn: '1 / -1' }}>
+            <label>责任人（选填，用于导出 Excel 工作台账）</label>
+            <input
+              value={draft.assignee ?? ''}
+              placeholder={app?.state.settings.owner ? `未填则默认使用「${app.state.settings.owner}」` : '例如：张三'}
+              onChange={(e) => setDraft({ ...draft, assignee: e.target.value })}
+            />
           </div>
         </div>
 

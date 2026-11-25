@@ -1,6 +1,10 @@
 export type WorkStatus = 'todo' | 'doing' | 'done'
-export type WorkPriority = 'high' | 'medium' | 'low'
+export type WorkPriority = 'normal' | 'high'
 export type NotifyFrequency = 'once' | 'daily' | 'hourly' | 'weekdays'
+
+export function normalizePriority(raw: unknown): WorkPriority {
+  return raw === 'high' ? 'high' : 'normal'
+}
 export type RepeatRule = 'none' | 'daily' | 'weekdays' | 'weekly' | 'monthly'
 export type QuoteKind = 'motivation' | 'riddle' | 'joke'
 export type ReportKind = 'weekly' | 'monthly'
@@ -33,6 +37,7 @@ export interface WorkItem {
   completedAt?: string
   status: WorkStatus
   priority?: WorkPriority
+  assignee?: string
   subtasks?: SubtaskItem[]
   focusMinutes?: number
   pinned?: boolean
@@ -85,6 +90,8 @@ export interface AppSettings {
   theme?: ThemeMode
   dndUntil?: string
   focusMinutesDefault?: number
+  department?: string
+  owner?: string
 }
 
 export interface FocusStats {
