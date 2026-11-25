@@ -1,0 +1,30 @@
+appId: com.rian.remind
+productName: 小猫工作助手
+copyright: Copyright © 小猫工作助手
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**/*
+extraResources:
+  - from: resources/icon.png
+    to: icon.png
+  - from: resources/reminder.html
+    to: reminder.html
+win:
+  target:
+    - nsis
+    - zip
+  artifactName: ${productName}-${version}-win-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: 小猫工作助手
+mac:
+  target:
+    - dmg
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+linux:
+  target:
+    - AppImage
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}

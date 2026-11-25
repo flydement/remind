@@ -1,0 +1,34 @@
+{
+  "name": "rian",
+  "version": "1.0.0",
+  "description": "小猫工作助手 — 工作项提醒、周报月报、语言库与健康小提醒",
+  "main": "./out/main/index.js",
+  "author": "小猫工作助手",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --config vite.config.ts",
+    "dev:desktop": "electron-vite dev",
+    "build": "vite build --config vite.config.ts",
+    "preview": "vite preview --config vite.config.ts",
+    "typecheck": "tsc -p tsconfig.web.json --noEmit",
+    "test": "node scripts/run-tests.mjs",
+    "build:desktop": "electron-vite build",
+    "pack:win": "node scripts/pack-win.mjs",
+    "build:win": "node scripts/pack-win.mjs",
+    "installer": "node scripts/make-installer.mjs",
+    "build:mac": "npm run build:desktop && electron-builder --mac"
+  },
+  "dependencies": {
+    "lucide-react": "^0.511.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11"
+  }
+}

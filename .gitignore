@@ -1,0 +1,12 @@
+node_modules
+out
+dist
+dist-web
+.cache
+.DS_Store
+*.log
+release
+.vscode
+.idea
+*.tsbuildinfo
+
