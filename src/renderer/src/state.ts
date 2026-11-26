@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AppState, NotifyEvent, ThemeMode, WorkItem, WorkStatus } from '@shared/types'
 import { EMPTY_STATE, normalizePriority, normalizeTheme, THEME_OPTIONS } from '@shared/types'
-import { seedDemoWork, seedHealth, seedQuotes } from '@shared/defaults'
+import { mergeBuiltinQuotes, QUOTES_CATALOG_VERSION, seedDemoWork, seedHealth, seedQuotes } from '@shared/defaults'
 import { createId } from '@shared/ids'
 import { addDays, isPastDue, isSameDay, nowIso, toLocalDate } from '@shared/time'
 import {
@@ -47,12 +47,23 @@ const THEME_META_COLOR: Record<ThemeMode, string> = Object.fromEntries(
 ) as Record<ThemeMode, string>
 
 function fallbackState(): AppState {
-  return { ...EMPTY_STATE, quotes: seedQuotes(), health: seedHealth() }
+  return {
+    ...EMPTY_STATE,
+    quotes: seedQuotes(),
+    quoteSettings: { ...EMPTY_STATE.quoteSettings, catalogVersion: QUOTES_CATALOG_VERSION },
+    health: seedHealth()
+  }
 }
 
 function hydrate(raw: Partial<AppState> | null | undefined): AppState {
   const base = fallbackState()
   const safe = raw && typeof raw === 'object' ? raw : {}
+  const prevCatalog = safe.quoteSettings?.catalogVersion ?? 1
+  const rawQuotes = Array.isArray(safe.quotes) && safe.quotes.length ? safe.quotes : base.quotes
+  const quotes =
+    prevCatalog < QUOTES_CATALOG_VERSION && Array.isArray(safe.quotes) && safe.quotes.length
+      ? mergeBuiltinQuotes(rawQuotes).quotes
+      : rawQuotes
   return {
     ...base,
     ...safe,
@@ -64,9 +75,13 @@ function hydrate(raw: Partial<AppState> | null | undefined): AppState {
           subtasks: Array.isArray(w.subtasks) ? w.subtasks : []
         }))
       : [],
-    quotes: Array.isArray(safe.quotes) && safe.quotes.length ? safe.quotes : base.quotes,
+    quotes,
     health: Array.isArray(safe.health) && safe.health.length ? safe.health : base.health,
-    quoteSettings: { ...base.quoteSettings, ...(safe.quoteSettings ?? {}) },
+    quoteSettings: {
+      ...base.quoteSettings,
+      ...(safe.quoteSettings ?? {}),
+      catalogVersion: Math.max(prevCatalog, QUOTES_CATALOG_VERSION)
+    },
     settings: { ...base.settings, ...(safe.settings ?? {}) },
     reports: Array.isArray(safe.reports) ? safe.reports : [],
     inbox: Array.isArray(safe.inbox) ? safe.inbox : [],
@@ -371,9 +386,13 @@ export function useAppState() {
         const raw = localStorage.getItem('rian-state')
         if (raw) {
           try {
-            const hydrated = hydrate(JSON.parse(raw) as AppState)
+            const parsed = JSON.parse(raw) as Partial<AppState>
+            const hydrated = hydrate(parsed)
             stateRef.current = hydrated
             setState(hydrated)
+            if ((parsed.quoteSettings?.catalogVersion ?? 1) < QUOTES_CATALOG_VERSION) {
+              localStorage.setItem('rian-state', JSON.stringify(hydrated))
+            }
           } catch {
             const fb = fallbackState()
             stateRef.current = fb

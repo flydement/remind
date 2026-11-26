@@ -155,6 +155,7 @@ export interface QuoteSettings {
   kinds: QuoteKind[]
   lastPushedDate?: string
   lastQuoteId?: string
+  catalogVersion?: number
 }
 
 export interface HealthReminder {

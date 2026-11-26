@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, Notification, Tray, Menu, nativeImage, she
 import { join, dirname } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { EMPTY_STATE, normalizePriority, THEME_OPTIONS, type AppState, type NotifyEvent } from '../shared/types'
-import { seedHealth, seedQuotes } from '../shared/defaults'
+import { mergeBuiltinQuotes, QUOTES_CATALOG_VERSION, seedHealth, seedQuotes } from '../shared/defaults'
 import { completeWorkItem, rolloverRepeats, snoozeWorkItem, tickScheduler } from '../shared/scheduler'
 
 app.setName('小猫工作助手')
@@ -39,6 +39,12 @@ function loadState(): AppState {
   try {
     const raw = readFileSync(dataFile(), 'utf-8')
     const parsed = JSON.parse(raw) as AppState
+    const prevCatalog = parsed.quoteSettings?.catalogVersion ?? 1
+    const baseQuotes = parsed.quotes?.length ? parsed.quotes : seedQuotes()
+    const quotes =
+      prevCatalog < QUOTES_CATALOG_VERSION && parsed.quotes?.length
+        ? mergeBuiltinQuotes(baseQuotes).quotes
+        : baseQuotes
     return {
       ...EMPTY_STATE,
       ...parsed,
@@ -46,9 +52,13 @@ function loadState(): AppState {
         ...w,
         priority: normalizePriority(w.priority)
       })),
-      quotes: parsed.quotes?.length ? parsed.quotes : seedQuotes(),
+      quotes,
       health: parsed.health?.length ? parsed.health : seedHealth(),
-      quoteSettings: { ...EMPTY_STATE.quoteSettings, ...parsed.quoteSettings },
+      quoteSettings: {
+        ...EMPTY_STATE.quoteSettings,
+        ...parsed.quoteSettings,
+        catalogVersion: Math.max(prevCatalog, QUOTES_CATALOG_VERSION)
+      },
       settings: { ...EMPTY_STATE.settings, ...parsed.settings },
       reports: parsed.reports ?? [],
       inbox: parsed.inbox ?? [],
@@ -58,6 +68,7 @@ function loadState(): AppState {
     return {
       ...EMPTY_STATE,
       quotes: seedQuotes(),
+      quoteSettings: { ...EMPTY_STATE.quoteSettings, catalogVersion: QUOTES_CATALOG_VERSION },
       health: seedHealth()
     }
   }

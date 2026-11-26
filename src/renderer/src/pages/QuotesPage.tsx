@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Check, Copy, MessageSquarePlus, Plus, Search, Shuffle, Trash2, X } from 'lucide-react'
+import { Check, Copy, MessageSquarePlus, Plus, RotateCcw, Search, Shuffle, Trash2, X } from 'lucide-react'
 import type { QuoteItem, QuoteKind, QuoteSettings } from '@shared/types'
+import { mergeBuiltinQuotes, QUOTES_CATALOG_VERSION, SAMPLE_QUOTES } from '@shared/defaults'
 import { createId } from '@shared/ids'
 import { nowIso } from '@shared/time'
 import PageHead from '../components/PageHead'
@@ -130,6 +131,27 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
     for (const item of app.state.quotes) counts[item.kind]++
     return counts
   }, [app.state.quotes])
+
+  const missingBuiltinCount = useMemo(() => {
+    const existing = new Set(app.state.quotes.map((q) => q.content.trim()))
+    return SAMPLE_QUOTES.filter((q) => !existing.has(q.content.trim())).length
+  }, [app.state.quotes])
+
+  const restoreBuiltinQuotes = (): void => {
+    const { quotes: merged, added } = mergeBuiltinQuotes(app.state.quotes)
+    if (!added) return
+    app.patch((st) => ({
+      ...st,
+      quotes: merged,
+      quoteSettings: { ...st.quoteSettings, catalogVersion: QUOTES_CATALOG_VERSION }
+    }))
+    app.setFlash({
+      id: createId('fl'),
+      title: `已补全 ${added} 条内置词条`,
+      body: `当前文库共 ${merged.length} 条词条。`,
+      source: 'quote'
+    })
+  }
 
   const filteredQuotes = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -377,19 +399,32 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
                 </button>
               ))}
             </div>
-            <div className="search-wrap">
-              <Search size={14} className="search-icon" />
-              <input
-                className="search-bar"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="检索文库内容..."
-              />
-              {search ? (
-                <button className="search-clear" onClick={() => setSearch('')}>
-                  <X size={13} />
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              {missingBuiltinCount > 0 ? (
+                <button
+                  type="button"
+                  className="btn ghost small"
+                  onClick={restoreBuiltinQuotes}
+                  title="补充尚未收录或曾被删除的内置词条"
+                >
+                  <RotateCcw size={12} />
+                  补全内置词条 (+{missingBuiltinCount})
                 </button>
               ) : null}
+              <div className="search-wrap">
+                <Search size={14} className="search-icon" />
+                <input
+                  className="search-bar"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="检索文库内容..."
+                />
+                {search ? (
+                  <button className="search-clear" onClick={() => setSearch('')}>
+                    <X size={13} />
+                  </button>
+                ) : null}
+              </div>
             </div>
           </div>
 

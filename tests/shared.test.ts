@@ -13,7 +13,7 @@ import { generateReport, upsertReport } from '../src/shared/reports'
 import { buildExcelFilename, collectMonthlyExcelPlan, generateWorkExcelBytes } from '../src/shared/excel'
 import { addMonthsClamped, inWorkHours, nextWorkday, relativeDaysLabel, toLocalDate } from '../src/shared/time'
 import { EMPTY_STATE, normalizeTheme, THEME_OPTIONS, type AppState, type WorkItem } from '../src/shared/types'
-import { seedDemoWork, seedHealth, seedQuotes } from '../src/shared/defaults'
+import { mergeBuiltinQuotes, SAMPLE_QUOTES, seedDemoWork, seedHealth, seedQuotes } from '../src/shared/defaults'
 
 function makeState(partial: Partial<AppState> = {}): AppState {
   return {
@@ -410,4 +410,30 @@ test('defaults: seedDemoWork produces 3 valid onboarding items spanning today an
   assert.ok((demo[0].subtasks?.length ?? 0) >= 3)
   assert.equal(toLocalDate(new Date(demo[1].dueAt)), '2026-11-25')
   assert.equal(toLocalDate(new Date(demo[2].dueAt)), '2026-12-02')
+})
+
+test('defaults: built-in quote catalog has 100+ unique entries across all kinds and merges cleanly', () => {
+  assert.ok(SAMPLE_QUOTES.length >= 100, `expected >= 100 quotes, got ${SAMPLE_QUOTES.length}`)
+  const unique = new Set(SAMPLE_QUOTES.map((q) => q.content.trim()))
+  assert.equal(unique.size, SAMPLE_QUOTES.length)
+
+  const byKind = { motivation: 0, riddle: 0, joke: 0 }
+  for (const q of SAMPLE_QUOTES) {
+    byKind[q.kind]++
+    if (q.kind === 'riddle') {
+      assert.ok(q.answer && q.answer.trim().length > 0, `riddle missing answer: ${q.content}`)
+    }
+  }
+  assert.ok(byKind.motivation >= 40)
+  assert.ok(byKind.riddle >= 30)
+  assert.ok(byKind.joke >= 30)
+
+  // Merging preserves existing disabled state and custom items while adding missing built-ins
+  const custom = { id: 'qt_custom', kind: 'motivation' as const, content: '自定义专属格言', enabled: true }
+  const firstDisabled = { id: 'qt_old', ...SAMPLE_QUOTES[0], enabled: false }
+  const { quotes: merged, added } = mergeBuiltinQuotes([custom, firstDisabled])
+  assert.equal(added, SAMPLE_QUOTES.length - 1)
+  assert.equal(merged.length, SAMPLE_QUOTES.length + 1)
+  assert.equal(merged[0].id, 'qt_custom')
+  assert.equal(merged[1].enabled, false)
 })
