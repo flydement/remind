@@ -1,6 +1,7 @@
-import { useState } from 'react'
-import { BellOff, CheckCircle2, Plus, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { BellOff, CheckCircle2, Plus, RotateCcw, SlidersHorizontal, Trash2 } from 'lucide-react'
 import type { HealthReminder } from '@shared/types'
+import { DEFAULT_HEALTH, HEALTH_CATALOG_VERSION, mergeBuiltinHealth } from '@shared/defaults'
 import { createId } from '@shared/ids'
 import { inWorkHours, nowIso } from '@shared/time'
 import PageHead from '../components/PageHead'
@@ -8,11 +9,61 @@ import type { useAppState } from '../state'
 
 export default function HealthPage({ app }: { app: ReturnType<typeof useAppState> }) {
   const [adding, setAdding] = useState(false)
+  const [filter, setFilter] = useState<'all' | 'active' | 'paused'>('all')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [emoji, setEmoji] = useState('🍵')
   const [title, setTitle] = useState('')
   const [message, setMessage] = useState('')
   const [interval, setIntervalVal] = useState(45)
+
+  const activeCount = useMemo(() => app.state.health.filter((h) => h.enabled).length, [app.state.health])
+  const pausedCount = app.state.health.length - activeCount
+
+  const missingBuiltinCount = useMemo(() => {
+    const existing = new Set(app.state.health.map((h) => h.title.trim()))
+    return DEFAULT_HEALTH.filter((h) => !existing.has(h.title.trim())).length
+  }, [app.state.health])
+
+  const visibleHealth = useMemo(() => {
+    if (filter === 'active') return app.state.health.filter((h) => h.enabled)
+    if (filter === 'paused') return app.state.health.filter((h) => !h.enabled)
+    return app.state.health
+  }, [app.state.health, filter])
+
+  const restoreBuiltinHealth = (): void => {
+    const { health: merged, added } = mergeBuiltinHealth(app.state.health)
+    if (!added) return
+    app.patch((s) => ({
+      ...s,
+      health: merged,
+      settings: { ...s.settings, healthCatalogVersion: HEALTH_CATALOG_VERSION }
+    }))
+    app.setFlash({
+      id: createId('fl'),
+      title: `已补全 ${added} 项内置健康节律`,
+      body: `当前共有 ${merged.length} 项健康节律可供随时开启。`,
+      source: 'health'
+    })
+  }
+
+  const deleteHealth = (h: HealthReminder): void => {
+    const prevList = app.state.health
+    app.patch((s) => ({
+      ...s,
+      health: s.health.filter((x) => x.id !== h.id)
+    }))
+    app.setFlash({
+      id: createId('fl'),
+      title: `已删除节律「${h.title}」`,
+      body: '误删可点击右侧撤销恢复。',
+      source: 'info',
+      actionLabel: '撤销',
+      onAction: () => {
+        app.patch((s) => ({ ...s, health: prevList }))
+        app.setFlash(null)
+      }
+    })
+  }
 
   const checkInNow = (h: HealthReminder): void => {
     const at = nowIso()
@@ -46,15 +97,21 @@ export default function HealthPage({ app }: { app: ReturnType<typeof useAppState
     setTitle('')
     setMessage('')
     setAdding(false)
+    app.setFlash({
+      id: createId('fl'),
+      title: `已创建健康节律：${item.title}`,
+      body: `每 ${item.intervalMinutes} 分钟提醒一次，工作时段内生效。`,
+      source: 'health'
+    })
   }
 
   return (
     <>
       <PageHead
         title="健康节律"
-        sub="科学管理久坐、饮水与用眼疲劳。工作时段内自动循环提醒，会议期间可一键开启勿扰。"
+        sub={`科学管理饮水、坐姿、肩颈手腕与用眼放松（已开启 ${activeCount} / 共 ${app.state.health.length} 项）。`}
         right={
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               className={`btn ${app.stats.dndActive ? '' : 'ghost'} small`}
               onClick={() => app.setDndMinutes(app.stats.dndActive ? 0 : 60)}
@@ -112,69 +169,90 @@ export default function HealthPage({ app }: { app: ReturnType<typeof useAppState
         </div>
       ) : null}
 
-      <div className="grid-2-equal">
-        {app.state.health.map((h) => {
-          const inWindow = !h.workHoursOnly || inWorkHours(app.now, h.workStart, h.workEnd)
-          const elapsedMin = h.lastFiredAt
-            ? Math.max(0, (app.now.getTime() - new Date(h.lastFiredAt).getTime()) / 60_000)
-            : 0
-          const remainMin = Math.max(1, Math.ceil(h.intervalMinutes - elapsedMin))
-          const pct = h.enabled && inWindow ? Math.min(100, Math.round((elapsedMin / h.intervalMinutes) * 100)) : 0
-          const isEditing = editingId === h.id
+      <div className="work-toolbar" style={{ marginBottom: 14 }}>
+        <div className="filters" style={{ marginBottom: 0 }}>
+          <button className={`chip ${filter === 'all' ? 'on' : ''}`} onClick={() => setFilter('all')}>
+            全部节律 ({app.state.health.length})
+          </button>
+          <button className={`chip ${filter === 'active' ? 'on' : ''}`} onClick={() => setFilter('active')}>
+            已启用 ({activeCount})
+          </button>
+          <button className={`chip ${filter === 'paused' ? 'on' : ''}`} onClick={() => setFilter('paused')}>
+            待开启 ({pausedCount})
+          </button>
+        </div>
+        {missingBuiltinCount > 0 ? (
+          <button
+            type="button"
+            className="btn ghost small"
+            onClick={restoreBuiltinHealth}
+            title="补充尚未收录或曾被删除的内置健康节律"
+          >
+            <RotateCcw size={12} />
+            补全内置节律 (+{missingBuiltinCount})
+          </button>
+        ) : null}
+      </div>
 
-          return (
-            <div className={`card health-card ${h.enabled ? 'active' : 'paused'}`} key={h.id}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div className="emoji-badge">{h.emoji}</div>
-                  <div>
-                    <h3 style={{ margin: 0 }}>{h.title}</h3>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-                      <span className={`tag ${h.enabled ? 'accent' : ''}`}>
-                        {!h.enabled
-                          ? '已暂停'
-                          : !inWindow
-                            ? '非工作时段休眠'
-                            : `约 ${remainMin} 分钟后提醒`}
-                      </span>
-                      <span className="muted" style={{ fontSize: 12 }}>
-                        每 {h.intervalMinutes}m · {h.workHoursOnly ? `${h.workStart}–${h.workEnd}` : '全天'}
-                      </span>
+      {visibleHealth.length ? (
+        <div className="grid-2-equal">
+          {visibleHealth.map((h) => {
+            const inWindow = !h.workHoursOnly || inWorkHours(app.now, h.workStart, h.workEnd)
+            const elapsedMin = h.lastFiredAt
+              ? Math.max(0, (app.now.getTime() - new Date(h.lastFiredAt).getTime()) / 60_000)
+              : 0
+            const remainMin = Math.max(1, Math.ceil(h.intervalMinutes - elapsedMin))
+            const pct = h.enabled && inWindow ? Math.min(100, Math.round((elapsedMin / h.intervalMinutes) * 100)) : 0
+            const isEditing = editingId === h.id
+
+            return (
+              <div className={`card health-card ${h.enabled ? 'active' : 'paused'}`} key={h.id}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div className="emoji-badge">{h.emoji}</div>
+                    <div>
+                      <h3 style={{ margin: 0 }}>{h.title}</h3>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                        <span className={`tag ${h.enabled ? 'accent' : ''}`}>
+                          {!h.enabled
+                            ? '已暂停'
+                            : !inWindow
+                              ? '非工作时段休眠'
+                              : `约 ${remainMin} 分钟后提醒`}
+                        </span>
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          每 {h.intervalMinutes}m · {h.workHoursOnly ? `${h.workStart}–${h.workEnd}` : '全天'}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  {h.enabled ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    {h.enabled ? (
+                      <button
+                        className="btn ghost small"
+                        title="已完成休息，重置本轮计时"
+                        onClick={() => checkInNow(h)}
+                      >
+                        <CheckCircle2 size={13} />
+                        打卡
+                      </button>
+                    ) : null}
                     <button
-                      className="btn ghost small"
-                      title="已完成休息，重置本轮计时"
-                      onClick={() => checkInNow(h)}
+                      className={`icon-btn ${isEditing ? 'active' : ''}`}
+                      title={isEditing ? '收起参数设置' : '调整间隔与生效时段'}
+                      onClick={() => setEditingId(isEditing ? null : h.id)}
                     >
-                      <CheckCircle2 size={13} />
-                      打卡
+                      <SlidersHorizontal size={14} />
                     </button>
-                  ) : null}
-                  <button
-                    className={`icon-btn ${isEditing ? 'active' : ''}`}
-                    title={isEditing ? '收起参数设置' : '调整间隔与生效时段'}
-                    onClick={() => setEditingId(isEditing ? null : h.id)}
-                  >
-                    <SlidersHorizontal size={14} />
-                  </button>
-                  {app.state.health.length > 1 ? (
-                    <button
-                      className="icon-btn"
-                      title="删除该项"
-                      onClick={() =>
-                        app.patch((s) => ({
-                          ...s,
-                          health: s.health.filter((x) => x.id !== h.id)
-                        }))
-                      }
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  ) : null}
+                    {app.state.health.length > 1 ? (
+                      <button
+                        className="icon-btn"
+                        title="删除该项（支持撤销）"
+                        onClick={() => deleteHealth(h)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    ) : null}
                   <button
                     className={`toggle ${h.enabled ? 'on' : ''}`}
                     onClick={() =>
@@ -276,10 +354,15 @@ export default function HealthPage({ app }: { app: ReturnType<typeof useAppState
                   </div>
                 </div>
               ) : null}
-            </div>
-          )
-        })}
-      </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="card empty">
+          {filter === 'active' ? '当前暂无已启用的健康节律，可在「待开启」中挑选开启。' : '所有健康节律都已启用啦！'}
+        </div>
+      )}
     </>
   )
 }

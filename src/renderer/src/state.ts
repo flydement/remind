@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AppState, NotifyEvent, ThemeMode, WorkItem, WorkStatus } from '@shared/types'
 import { EMPTY_STATE, normalizePriority, normalizeTheme, THEME_OPTIONS } from '@shared/types'
-import { mergeBuiltinQuotes, QUOTES_CATALOG_VERSION, seedDemoWork, seedHealth, seedQuotes } from '@shared/defaults'
+import {
+  HEALTH_CATALOG_VERSION,
+  mergeBuiltinHealth,
+  mergeBuiltinQuotes,
+  QUOTES_CATALOG_VERSION,
+  seedDemoWork,
+  seedHealth,
+  seedQuotes
+} from '@shared/defaults'
 import { createId } from '@shared/ids'
 import { addDays, isPastDue, isSameDay, nowIso, toLocalDate } from '@shared/time'
 import {
@@ -51,7 +59,8 @@ function fallbackState(): AppState {
     ...EMPTY_STATE,
     quotes: seedQuotes(),
     quoteSettings: { ...EMPTY_STATE.quoteSettings, catalogVersion: QUOTES_CATALOG_VERSION },
-    health: seedHealth()
+    health: seedHealth(),
+    settings: { ...EMPTY_STATE.settings, healthCatalogVersion: HEALTH_CATALOG_VERSION }
   }
 }
 
@@ -64,6 +73,12 @@ function hydrate(raw: Partial<AppState> | null | undefined): AppState {
     prevCatalog < QUOTES_CATALOG_VERSION && Array.isArray(safe.quotes) && safe.quotes.length
       ? mergeBuiltinQuotes(rawQuotes).quotes
       : rawQuotes
+  const prevHealthCatalog = safe.settings?.healthCatalogVersion ?? 1
+  const rawHealth = Array.isArray(safe.health) && safe.health.length ? safe.health : base.health
+  const health =
+    prevHealthCatalog < HEALTH_CATALOG_VERSION && Array.isArray(safe.health) && safe.health.length
+      ? mergeBuiltinHealth(rawHealth).health
+      : rawHealth
   return {
     ...base,
     ...safe,
@@ -76,13 +91,17 @@ function hydrate(raw: Partial<AppState> | null | undefined): AppState {
         }))
       : [],
     quotes,
-    health: Array.isArray(safe.health) && safe.health.length ? safe.health : base.health,
+    health,
     quoteSettings: {
       ...base.quoteSettings,
       ...(safe.quoteSettings ?? {}),
       catalogVersion: Math.max(prevCatalog, QUOTES_CATALOG_VERSION)
     },
-    settings: { ...base.settings, ...(safe.settings ?? {}) },
+    settings: {
+      ...base.settings,
+      ...(safe.settings ?? {}),
+      healthCatalogVersion: Math.max(prevHealthCatalog, HEALTH_CATALOG_VERSION)
+    },
     reports: Array.isArray(safe.reports) ? safe.reports : [],
     inbox: Array.isArray(safe.inbox) ? safe.inbox : [],
     focusStats: { ...base.focusStats!, ...(safe.focusStats ?? {}) }
@@ -390,7 +409,10 @@ export function useAppState() {
             const hydrated = hydrate(parsed)
             stateRef.current = hydrated
             setState(hydrated)
-            if ((parsed.quoteSettings?.catalogVersion ?? 1) < QUOTES_CATALOG_VERSION) {
+            if (
+              (parsed.quoteSettings?.catalogVersion ?? 1) < QUOTES_CATALOG_VERSION ||
+              (parsed.settings?.healthCatalogVersion ?? 1) < HEALTH_CATALOG_VERSION
+            ) {
               localStorage.setItem('rian-state', JSON.stringify(hydrated))
             }
           } catch {

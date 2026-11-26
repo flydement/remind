@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { BellRing, Check, Database, Download, Keyboard, Palette, SlidersHorizontal, Upload } from 'lucide-react'
 import { THEME_OPTIONS } from '@shared/types'
 import { toLocalDate } from '@shared/time'
+import pinkCatAvatar from '../assets/pink-cat-avatar.svg'
 import PageHead from '../components/PageHead'
 import type { useAppState } from '../state'
 
@@ -47,13 +48,16 @@ export default function SettingsPage({ app }: { app: ReturnType<typeof useAppSta
           {THEME_OPTIONS.map((t) => {
             const active = app.theme === t.id
             const isDark = t.id === 'dark'
+            const isPinkCat = t.id === 'pinkcat'
             const cardSurface = isDark ? '#131c2e' : t.id === 'eyecare' ? '#f2f7f1' : '#ffffff'
             const stroke =
               t.id === 'cartoon'
                 ? '1.5px solid #1e293b'
-                : isDark
-                  ? '1px solid rgba(148,163,184,0.22)'
-                  : '1px solid rgba(15,23,42,0.1)'
+                : isPinkCat
+                  ? '1.5px solid #f08cb6'
+                  : isDark
+                    ? '1px solid rgba(148,163,184,0.22)'
+                    : '1px solid rgba(15,23,42,0.1)'
             return (
               <button
                 key={t.id}
@@ -66,19 +70,37 @@ export default function SettingsPage({ app }: { app: ReturnType<typeof useAppSta
                   style={{ background: t.colors[0], border: stroke }}
                   aria-hidden="true"
                 >
-                  <div className="theme-mini-side" style={{ background: t.colors[1], opacity: isDark ? 0.9 : 0.35 }} />
+                  <div
+                    className="theme-mini-side"
+                    style={{ background: t.colors[1], opacity: isDark || isPinkCat ? 0.95 : 0.35 }}
+                  />
                   <div className="theme-mini-body">
                     <div
                       className="theme-mini-card"
                       style={{
                         background: cardSurface,
-                        border: t.id === 'cartoon' ? '1.5px solid #1e293b' : undefined
+                        border:
+                          t.id === 'cartoon'
+                            ? '1.5px solid #1e293b'
+                            : isPinkCat
+                              ? '1.5px solid #f5a9c9'
+                              : undefined
                       }}
                     >
-                      <span className="theme-mini-pill" style={{ background: t.colors[2] }} />
+                      {isPinkCat ? (
+                        <img className="theme-mini-cat" src={pinkCatAvatar} alt="" />
+                      ) : (
+                        <span className="theme-mini-pill" style={{ background: t.colors[2] }} />
+                      )}
                       <span
                         className="theme-mini-line"
-                        style={{ background: isDark ? 'rgba(226,232,240,0.45)' : 'rgba(15,23,42,0.22)' }}
+                        style={{
+                          background: isDark
+                            ? 'rgba(226,232,240,0.45)'
+                            : isPinkCat
+                              ? 'rgba(240,78,136,0.32)'
+                              : 'rgba(15,23,42,0.22)'
+                        }}
                       />
                     </div>
                   </div>

@@ -132,6 +132,8 @@ export const SAMPLE_QUOTES: Omit<QuoteItem, 'id'>[] = [
   { kind: 'joke', content: '今天最大的成就：在截止时间前两小时交稿，成功体验了一把游刃有余。', enabled: true }
 ]
 
+export const HEALTH_CATALOG_VERSION = 2
+
 export const DEFAULT_HEALTH: Omit<HealthReminder, 'id'>[] = [
   {
     title: '喝口水',
@@ -164,6 +166,16 @@ export const DEFAULT_HEALTH: Omit<HealthReminder, 'id'>[] = [
     workEnd: '18:30'
   },
   {
+    title: '端正坐姿',
+    message: '收一收下巴、沉下双肩、双脚平放地面，别不知不觉把背卷成虾米。',
+    emoji: '🪑',
+    enabled: true,
+    intervalMinutes: 45,
+    workHoursOnly: true,
+    workStart: '09:00',
+    workEnd: '18:30'
+  },
+  {
     title: '活动肩膀',
     message: '滚一滚肩膀，伸个懒腰。你不是钉子，不必钉在桌前。',
     emoji: '🙆',
@@ -171,6 +183,76 @@ export const DEFAULT_HEALTH: Omit<HealthReminder, 'id'>[] = [
     intervalMinutes: 90,
     workHoursOnly: true,
     workStart: '09:00',
+    workEnd: '18:30'
+  },
+  {
+    title: '放松颈椎',
+    message: '缓慢左右侧倾头部与轻仰下巴各保持 10 秒，给紧绷的颈肩松松绑。',
+    emoji: '🦒',
+    enabled: false,
+    intervalMinutes: 75,
+    workHoursOnly: true,
+    workStart: '09:00',
+    workEnd: '18:30'
+  },
+  {
+    title: '活动手腕手指',
+    message: '甩一甩手腕、张开五指再轻握 10 次，缓解长时间敲键盘与握鼠标的僵硬。',
+    emoji: '👐',
+    enabled: false,
+    intervalMinutes: 80,
+    workHoursOnly: true,
+    workStart: '09:00',
+    workEnd: '18:30'
+  },
+  {
+    title: '深呼吸减压',
+    message: '做 3 次 4-4-6 慢呼吸：吸气 4 秒、停顿 4 秒、缓缓呼气 6 秒，帮大脑降降温。',
+    emoji: '🌬️',
+    enabled: false,
+    intervalMinutes: 60,
+    workHoursOnly: true,
+    workStart: '09:00',
+    workEnd: '18:30'
+  },
+  {
+    title: '眨眼润目',
+    message: '连续慢眨眼 10 次，或闭目掌心轻敷 20 秒，让干涩的双眼重新湿润放松。',
+    emoji: '👁️',
+    enabled: false,
+    intervalMinutes: 40,
+    workHoursOnly: true,
+    workStart: '09:00',
+    workEnd: '18:30'
+  },
+  {
+    title: '勾脚踝活血',
+    message: '坐姿抬起脚尖交替勾脚、轻转脚踝 15 次，促进久坐后的下肢血液循环。',
+    emoji: '🦶',
+    enabled: false,
+    intervalMinutes: 70,
+    workHoursOnly: true,
+    workStart: '09:00',
+    workEnd: '18:30'
+  },
+  {
+    title: '午后补给小憩',
+    message: '下午容易犯困，起来泡杯温茶、吃几颗坚果或洗把脸，轻轻重启专注力。',
+    emoji: '🍵',
+    enabled: false,
+    intervalMinutes: 120,
+    workHoursOnly: true,
+    workStart: '14:00',
+    workEnd: '17:30'
+  },
+  {
+    title: '整理桌面收尾',
+    message: '顺手归置桌面水杯与纸笔、清理多余浏览器标签，给今天的工作一个利落的句号。',
+    emoji: '🧹',
+    enabled: false,
+    intervalMinutes: 180,
+    workHoursOnly: true,
+    workStart: '17:00',
     workEnd: '18:30'
   }
 ]
@@ -197,6 +279,22 @@ export function mergeBuiltinQuotes(existing: QuoteItem[]): { quotes: QuoteItem[]
 
 export function seedHealth(): HealthReminder[] {
   return DEFAULT_HEALTH.map((h) => ({ ...h, id: createId('hl') }))
+}
+
+/**
+ * 将新增的内置健康节律合并至已有列表（按标题去重，保留用户自定义节律与已有开关/时段配置）
+ */
+export function mergeBuiltinHealth(existing: HealthReminder[]): { health: HealthReminder[]; added: number } {
+  const seen = new Set(existing.map((h) => h.title.trim()))
+  const additions: HealthReminder[] = []
+  for (const sample of DEFAULT_HEALTH) {
+    if (!seen.has(sample.title.trim())) {
+      seen.add(sample.title.trim())
+      additions.push({ ...sample, id: createId('hl') })
+    }
+  }
+  if (!additions.length) return { health: existing, added: 0 }
+  return { health: [...existing, ...additions], added: additions.length }
 }
 
 export function seedDemoWork(now = new Date()): WorkItem[] {

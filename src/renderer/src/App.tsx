@@ -4,6 +4,7 @@ import {
   BellOff,
   BookOpenText,
   Calendar,
+  Cat,
   Check,
   ClipboardList,
   Eye,
@@ -28,6 +29,9 @@ import { pad2, weekdayCn } from '@shared/time'
 import { useAppState } from './state'
 import { setBaseTitle } from './notify'
 import logoSvg from './assets/logo.svg'
+import pinkCatAvatar from './assets/pink-cat-avatar.svg'
+import pinkCatPeeker from './assets/pink-cat-peeker.svg'
+import pinkCatCorner from './assets/pink-cat-corner.svg'
 import CommandPalette from './components/CommandPalette'
 import ExportExcelModal from './components/ExportExcelModal'
 import WorkEditor from './components/WorkEditor'
@@ -56,6 +60,7 @@ const THEME_ICON: Record<ThemeMode, typeof Sun> = {
   eyecare: Eye,
   minimal: Minimize2,
   cute: Heart,
+  pinkcat: Cat,
   cartoon: Sparkles,
   paper: Palette,
   dark: Moon
@@ -180,15 +185,26 @@ export default function App() {
 
   const focusPresets = Array.from(new Set([15, app.defaultFocusMinutes, 45])).sort((a, b) => a - b)
   const ThemeIcon = THEME_ICON[app.theme] ?? Sun
+  const isPinkCat = app.theme === 'pinkcat'
+  const activeLogo = isPinkCat ? pinkCatAvatar : logoSvg
+  const pinkCatMood = app.focusTimer.active
+    ? app.focusTimer.mode === 'focus'
+      ? '专注中，喵喵陪你冲刺~'
+      : '休息时间，伸个懒腰喵~'
+    : app.stats.overdue > 0
+      ? `有 ${app.stats.overdue} 项逾期，先搞定一件喵~`
+      : app.stats.open === 0 && totalTasks > 0
+        ? '任务全清空，奖励小鱼干！'
+        : '今天也要元气满满喵~'
 
   return (
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <img className="brand-mark" src={logoSvg} alt="小猫工作助手" />
+          <img className={`brand-mark ${isPinkCat ? 'pinkcat-brand-mark' : ''}`} src={activeLogo} alt="小猫工作助手" />
           <div className="brand-text">
             <h1>小猫工作助手</h1>
-            <p>日程追踪与效率中枢</p>
+            <p>{isPinkCat ? '粉萌喵喵 · 治愈陪伴中' : '日程追踪与效率中枢'}</p>
           </div>
         </div>
 
@@ -224,68 +240,76 @@ export default function App() {
           })}
         </nav>
 
-        <div className={`focus-widget ${app.focusTimer.active ? 'running' : ''}`}>
-          {app.focusTimer.active ? (
-            <>
-              <div className="focus-widget-top">
-                <span className="focus-mode-tag">
-                  <Timer size={12} />
-                  {app.focusTimer.mode === 'focus' ? '专注中' : '休息中'}
-                </span>
-                <span className="focus-clock">
-                  {pad2(focusMin)}:{pad2(focusSec)}
-                </span>
-              </div>
-              {focusWork ? (
-                <div className="focus-task-name" title={focusWork.title}>
-                  {focusWork.title}
-                </div>
-              ) : null}
-              <div className="sidebar-progress" style={{ margin: '7px 0' }}>
-                <div className="sidebar-progress-bar accent" style={{ width: `${focusPct}%` }} />
-              </div>
-              <div className="focus-actions">
-                <button className="mini-btn" onClick={app.pauseResumeFocus}>
-                  {app.focusTimer.paused ? <Play size={12} /> : <Pause size={12} />}
-                  {app.focusTimer.paused ? '继续' : '暂停'}
-                </button>
-                <button className="mini-btn ghost" onClick={app.stopFocus}>
-                  <Square size={11} />
-                  结束
-                </button>
-              </div>
-            </>
-          ) : (
-            <div>
-              <div className="focus-idle-row">
-                <div>
-                  <div className="focus-idle-title">番茄专注</div>
-                  <div className="focus-idle-sub">今日 {app.stats.todayFocusMinutes} 分钟</div>
-                </div>
-                <button
-                  className="mini-btn"
-                  onClick={() => app.startFocus(app.defaultFocusMinutes)}
-                  title={`开启 ${app.defaultFocusMinutes} 分钟专注`}
-                >
-                  <Play size={12} />
-                  开始
-                </button>
-              </div>
-              <div className="focus-presets">
-                {focusPresets.map((mins) => (
-                  <button
-                    key={mins}
-                    type="button"
-                    className={`focus-preset-btn ${mins === app.defaultFocusMinutes ? 'default' : ''}`}
-                    onClick={() => app.startFocus(mins)}
-                    title={`立即开启 ${mins} 分钟专注`}
-                  >
-                    {mins}m
-                  </button>
-                ))}
-              </div>
+        <div className={isPinkCat ? 'focus-shell pinkcat-focus-shell' : 'focus-shell'}>
+          {isPinkCat ? (
+            <div className="pinkcat-peeker-wrap" aria-hidden="true">
+              <span className="pinkcat-speech">{pinkCatMood}</span>
+              <img className="pinkcat-peeker-img" src={pinkCatPeeker} alt="" />
             </div>
-          )}
+          ) : null}
+          <div className={`focus-widget ${app.focusTimer.active ? 'running' : ''}`}>
+            {app.focusTimer.active ? (
+              <>
+                <div className="focus-widget-top">
+                  <span className="focus-mode-tag">
+                    <Timer size={12} />
+                    {app.focusTimer.mode === 'focus' ? '专注中' : '休息中'}
+                  </span>
+                  <span className="focus-clock">
+                    {pad2(focusMin)}:{pad2(focusSec)}
+                  </span>
+                </div>
+                {focusWork ? (
+                  <div className="focus-task-name" title={focusWork.title}>
+                    {focusWork.title}
+                  </div>
+                ) : null}
+                <div className="sidebar-progress" style={{ margin: '7px 0' }}>
+                  <div className="sidebar-progress-bar accent" style={{ width: `${focusPct}%` }} />
+                </div>
+                <div className="focus-actions">
+                  <button className="mini-btn" onClick={app.pauseResumeFocus}>
+                    {app.focusTimer.paused ? <Play size={12} /> : <Pause size={12} />}
+                    {app.focusTimer.paused ? '继续' : '暂停'}
+                  </button>
+                  <button className="mini-btn ghost" onClick={app.stopFocus}>
+                    <Square size={11} />
+                    结束
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div>
+                <div className="focus-idle-row">
+                  <div>
+                    <div className="focus-idle-title">番茄专注</div>
+                    <div className="focus-idle-sub">今日 {app.stats.todayFocusMinutes} 分钟</div>
+                  </div>
+                  <button
+                    className="mini-btn"
+                    onClick={() => app.startFocus(app.defaultFocusMinutes)}
+                    title={`开启 ${app.defaultFocusMinutes} 分钟专注`}
+                  >
+                    <Play size={12} />
+                    开始
+                  </button>
+                </div>
+                <div className="focus-presets">
+                  {focusPresets.map((mins) => (
+                    <button
+                      key={mins}
+                      type="button"
+                      className={`focus-preset-btn ${mins === app.defaultFocusMinutes ? 'default' : ''}`}
+                      onClick={() => app.startFocus(mins)}
+                      title={`立即开启 ${mins} 分钟专注`}
+                    >
+                      {mins}m
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="sidebar-foot" ref={themePopRef} style={{ position: 'relative' }}>
@@ -326,7 +350,7 @@ export default function App() {
               <button
                 className={`foot-icon-btn ${themeMenuOpen ? 'active' : ''}`}
                 onClick={() => setThemeMenuOpen((v) => !v)}
-                title={`当前主题：${THEME_NAME[app.theme]}（点击展开 7 套主题）`}
+                title={`当前主题：${THEME_NAME[app.theme]}（点击展开 ${THEME_OPTIONS.length} 套主题）`}
               >
                 <ThemeIcon size={13} />
               </button>
@@ -353,7 +377,7 @@ export default function App() {
       <main className="main">
         <header className="mobile-topbar">
           <div className="mobile-brand" onClick={() => setPage('today')}>
-            <img src={logoSvg} alt="小猫工作助手" />
+            <img src={activeLogo} alt="小猫工作助手" />
             <span>小猫工作助手</span>
           </div>
           <div className="mobile-actions" ref={mobileThemeRef}>
@@ -417,6 +441,12 @@ export default function App() {
           {page === 'quotes' && <QuotesPage app={app} />}
           {page === 'health' && <HealthPage app={app} />}
           {page === 'settings' && <SettingsPage app={app} />}
+          {isPinkCat ? (
+            <div className="pinkcat-footer-companion" aria-hidden="true">
+              <img className="pinkcat-corner-art" src={pinkCatCorner} alt="" />
+              <span>喵喵一直在角落为你加油，记得按时喝水、保护眼睛哦～</span>
+            </div>
+          ) : null}
         </div>
       </main>
 

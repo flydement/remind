@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import type { PageId, WorkItem } from '@shared/types'
 import { formatDateTimeCn, isSameDay } from '@shared/time'
+import pinkCatBanner from '../assets/pink-cat-banner.svg'
 import PageHead from '../components/PageHead'
 import QuickComposer from '../components/QuickComposer'
 import type { useAppState } from '../state'
@@ -76,6 +77,7 @@ export default function TodayPage({
   )
 
   const isExisting = Boolean(editing && app.state.workItems.some((w) => w.id === editing.id))
+  const activeHealthCount = app.state.health.filter((h) => h.enabled).length
 
   return (
     <>
@@ -90,6 +92,33 @@ export default function TodayPage({
           ) : null
         }
       />
+
+      {app.theme === 'pinkcat' ? (
+        <div className="card pinkcat-hero-card">
+          <div className="pinkcat-hero-copy">
+            <span className="pinkcat-kicker">粉萌喵喵工作台</span>
+            <h3>小猫已就位，陪你把今天安排得甜甜顺顺～</h3>
+            <p className="muted" style={{ margin: 0, lineHeight: 1.55 }}>
+              {app.stats.dueToday > 0
+                ? `今日有 ${app.stats.dueToday} 项到期事项，还有 ${activeHealthCount} 项健康节律守护你喝水与放松。`
+                : `当前有 ${app.stats.open} 项待办事项与 ${activeHealthCount} 项健康节律运行中，按自己的节奏慢慢推进吧。`}
+            </p>
+            <div className="pinkcat-hero-actions">
+              <button className="btn small" onClick={() => go('health')}>
+                查看健康节律
+              </button>
+              <button className="btn ghost small" onClick={() => go('quotes')}>
+                抽一条今日喵语
+              </button>
+            </div>
+          </div>
+          <img
+            className="pinkcat-hero-art"
+            src={pinkCatBanner}
+            alt="粉萌卡通小猫在粉色书桌前陪伴办公的插画"
+          />
+        </div>
+      ) : null}
 
       {!window.rian && app.notifyPerm !== 'granted' && !notifyBannerHidden ? (
         <div className="card banner-warn">

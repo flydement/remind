@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   BellOff,
   BookOpenText,
+  Cat,
   CheckCircle2,
   ClipboardList,
   CornerDownLeft,
@@ -144,7 +145,7 @@ export default function CommandPalette({
         group: '外观主题',
         title: `切换主题：${t.name}（${t.badge}）`,
         hint: app.theme === t.id ? '当前使用' : t.hint,
-        icon: t.id === 'dark' ? Moon : t.id === 'slate' ? Sun : Palette,
+        icon: t.id === 'dark' ? Moon : t.id === 'slate' ? Sun : t.id === 'pinkcat' ? Cat : Palette,
         run: () => app.setTheme(t.id)
       })),
       {

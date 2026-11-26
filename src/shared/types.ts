@@ -9,7 +9,7 @@ export type RepeatRule = 'none' | 'daily' | 'weekdays' | 'weekly' | 'monthly'
 export type QuoteKind = 'motivation' | 'riddle' | 'joke'
 export type ReportKind = 'weekly' | 'monthly'
 export type ReportStyle = 'executive' | 'concise' | 'warm'
-export type ThemeMode = 'slate' | 'eyecare' | 'minimal' | 'cute' | 'cartoon' | 'paper' | 'dark'
+export type ThemeMode = 'slate' | 'eyecare' | 'minimal' | 'cute' | 'pinkcat' | 'cartoon' | 'paper' | 'dark'
 export type PageId = 'today' | 'work' | 'reports' | 'quotes' | 'health' | 'settings'
 
 export interface ThemeOption {
@@ -63,6 +63,16 @@ export const THEME_OPTIONS: ThemeOption[] = [
     colors: ['#fff5f8', '#ffe0ec', '#e85d88'],
     windowBg: '#FFF5F8',
     metaColor: '#e85d88'
+  },
+  {
+    id: 'pinkcat',
+    name: '粉萌喵喵',
+    badge: '萌猫',
+    desc: '草莓奶昔粉配专属卡通猫插画、猫爪暗纹与趴边陪伴小猫',
+    hint: '粉色卡通猫',
+    colors: ['#fff0f6', '#ffd2e6', '#f04e88'],
+    windowBg: '#FFF0F6',
+    metaColor: '#f04e88'
   },
   {
     id: 'cartoon',
@@ -181,6 +191,7 @@ export interface AppSettings {
   focusMinutesDefault?: number
   department?: string
   owner?: string
+  healthCatalogVersion?: number
 }
 
 export interface FocusStats {
