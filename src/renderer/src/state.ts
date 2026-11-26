@@ -3,7 +3,7 @@ import type { AppState, NotifyEvent, ThemeMode, WorkItem, WorkStatus } from '@sh
 import { EMPTY_STATE, normalizePriority, normalizeTheme, THEME_OPTIONS } from '@shared/types'
 import { seedHealth, seedQuotes } from '@shared/defaults'
 import { createId } from '@shared/ids'
-import { isPastDue, isSameDay, nowIso, toLocalDate } from '@shared/time'
+import { addDays, isPastDue, isSameDay, nowIso, toLocalDate } from '@shared/time'
 import {
   batchPostponeOverdue,
   completeWorkItem,
@@ -554,6 +554,60 @@ export function useAppState() {
     [persist]
   )
 
+  const postponeWorkItem = useCallback(
+    (workId: string, days = 1) => {
+      const target = stateRef.current.workItems.find((w) => w.id === workId)
+      if (!target || target.status === 'done') return
+      const prevDue = target.dueAt
+      const nowRef = new Date()
+      const baseDay = isPastDue(target.dueAt, nowRef)
+        ? new Date(nowRef.getFullYear(), nowRef.getMonth(), nowRef.getDate(), 18, 0, 0, 0)
+        : new Date(target.dueAt)
+      const nextDue = addDays(baseDay, Math.max(1, days)).toISOString()
+      const at = nowIso()
+      patch((s) => ({
+        ...s,
+        workItems: s.workItems.map((w) =>
+          w.id === workId
+            ? {
+                ...w,
+                dueAt: nextDue,
+                updatedAt: at,
+                notify: { ...w.notify, lastFiredAt: undefined, snoozedUntil: undefined }
+              }
+            : w
+        )
+      }))
+      setFlash({
+        id: createId('fl'),
+        title: `已顺延「${target.title}」`,
+        body: `新截止日期：${toLocalDate(new Date(nextDue))}。`,
+        source: 'work',
+        actionLabel: '撤销',
+        onAction: () => {
+          patch((s) => ({
+            ...s,
+            workItems: s.workItems.map((w) => (w.id === workId ? { ...w, dueAt: prevDue } : w))
+          }))
+          setFlash(null)
+        }
+      })
+    },
+    [patch]
+  )
+
+  const shuffleQuote = useCallback(() => {
+    const s = stateRef.current.quoteSettings
+    const pool = stateRef.current.quotes.filter((q) => q.enabled && s.kinds.includes(q.kind))
+    if (!pool.length) return
+    const unused = pool.filter((q) => q.id !== s.lastQuoteId)
+    const pick = unused[Math.floor(Math.random() * unused.length)] ?? pool[0]
+    patch((st) => ({
+      ...st,
+      quoteSettings: { ...st.quoteSettings, lastQuoteId: pick.id }
+    }))
+  }, [patch])
+
   const saveWork = useCallback(
     (item: WorkItem) => {
       const normalized: WorkItem = {
@@ -581,6 +635,16 @@ export function useAppState() {
         inbox: [ev, ...s.inbox].slice(0, 100)
       }))
       setFlash({ id: ev.id, title: ev.title, body: ev.body, source: 'work' })
+    },
+    [patch]
+  )
+
+  const markInboxRead = useCallback(
+    (inboxId: string) => {
+      patch((s) => ({
+        ...s,
+        inbox: s.inbox.map((n) => (n.id === inboxId && !n.read ? { ...n, read: true } : n))
+      }))
     },
     [patch]
   )
@@ -679,7 +743,10 @@ export function useAppState() {
     deleteWork,
     clearCompletedWork,
     postponeOverdue,
+    postponeWorkItem,
+    shuffleQuote,
     saveWork,
+    markInboxRead,
     markAllInboxRead,
     clearInbox,
     exportState,

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BellOff, CheckCircle2, Plus, Trash2 } from 'lucide-react'
+import { BellOff, CheckCircle2, Plus, SlidersHorizontal, Trash2 } from 'lucide-react'
 import type { HealthReminder } from '@shared/types'
 import { createId } from '@shared/ids'
 import { inWorkHours, nowIso } from '@shared/time'
@@ -8,6 +8,7 @@ import type { useAppState } from '../state'
 
 export default function HealthPage({ app }: { app: ReturnType<typeof useAppState> }) {
   const [adding, setAdding] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [emoji, setEmoji] = useState('🍵')
   const [title, setTitle] = useState('')
   const [message, setMessage] = useState('')
@@ -63,7 +64,7 @@ export default function HealthPage({ app }: { app: ReturnType<typeof useAppState
             </button>
             <button className="btn small" onClick={() => setAdding((v) => !v)}>
               <Plus size={13} />
-              新增健康节律
+              新增节律
             </button>
           </div>
         }
@@ -83,16 +84,30 @@ export default function HealthPage({ app }: { app: ReturnType<typeof useAppState
             </div>
             <div className="field">
               <label>循环间隔（分钟）</label>
-              <input type="number" min={5} value={interval} onChange={(e) => setIntervalVal(Math.max(5, Number(e.target.value) || 30))} />
+              <input
+                type="number"
+                min={5}
+                value={interval}
+                onChange={(e) => setIntervalVal(Math.max(5, Number(e.target.value) || 30))}
+              />
             </div>
             <div className="field">
               <label>提示语</label>
-              <input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="简短温和的行动提示..." />
+              <input
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="简短温和的行动提示..."
+                onKeyDown={(e) => e.key === 'Enter' && createCustom()}
+              />
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
-            <button className="btn ghost small" onClick={() => setAdding(false)}>取消</button>
-            <button className="btn small" onClick={createCustom}>创建并启用</button>
+            <button className="btn ghost small" onClick={() => setAdding(false)}>
+              取消
+            </button>
+            <button className="btn small" onClick={createCustom}>
+              创建并启用
+            </button>
           </div>
         </div>
       ) : null}
@@ -105,24 +120,30 @@ export default function HealthPage({ app }: { app: ReturnType<typeof useAppState
             : 0
           const remainMin = Math.max(1, Math.ceil(h.intervalMinutes - elapsedMin))
           const pct = h.enabled && inWindow ? Math.min(100, Math.round((elapsedMin / h.intervalMinutes) * 100)) : 0
+          const isEditing = editingId === h.id
 
           return (
             <div className={`card health-card ${h.enabled ? 'active' : 'paused'}`} key={h.id}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <div className="emoji-badge">{h.emoji}</div>
                   <div>
                     <h3 style={{ margin: 0 }}>{h.title}</h3>
-                    <span className={`tag ${h.enabled ? 'accent' : ''}`} style={{ marginTop: 4 }}>
-                      {!h.enabled
-                        ? '已暂停'
-                        : !inWindow
-                          ? '非工作时段休眠中'
-                          : `运行中 · 约 ${remainMin} 分钟后提醒`}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                      <span className={`tag ${h.enabled ? 'accent' : ''}`}>
+                        {!h.enabled
+                          ? '已暂停'
+                          : !inWindow
+                            ? '非工作时段休眠'
+                            : `约 ${remainMin} 分钟后提醒`}
+                      </span>
+                      <span className="muted" style={{ fontSize: 12 }}>
+                        每 {h.intervalMinutes}m · {h.workHoursOnly ? `${h.workStart}–${h.workEnd}` : '全天'}
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   {h.enabled ? (
                     <button
                       className="btn ghost small"
@@ -130,9 +151,16 @@ export default function HealthPage({ app }: { app: ReturnType<typeof useAppState
                       onClick={() => checkInNow(h)}
                     >
                       <CheckCircle2 size={13} />
-                      打卡重置
+                      打卡
                     </button>
                   ) : null}
+                  <button
+                    className={`icon-btn ${isEditing ? 'active' : ''}`}
+                    title={isEditing ? '收起参数设置' : '调整间隔与生效时段'}
+                    onClick={() => setEditingId(isEditing ? null : h.id)}
+                  >
+                    <SlidersHorizontal size={14} />
+                  </button>
                   {app.state.health.length > 1 ? (
                     <button
                       className="icon-btn"
@@ -167,7 +195,9 @@ export default function HealthPage({ app }: { app: ReturnType<typeof useAppState
                 </div>
               </div>
 
-              <p className="muted" style={{ margin: '4px 0 0', lineHeight: 1.5 }}>{h.message}</p>
+              <p className="muted" style={{ margin: '2px 0 0', lineHeight: 1.5 }}>
+                {h.message}
+              </p>
 
               {h.enabled && inWindow ? (
                 <div className="sidebar-progress" style={{ margin: '2px 0' }}>
@@ -175,73 +205,77 @@ export default function HealthPage({ app }: { app: ReturnType<typeof useAppState
                 </div>
               ) : null}
 
-              <div className="form-grid">
-                <div className="field">
-                  <label>间隔（分钟）</label>
-                  <input
-                    type="number"
-                    min={5}
-                    value={h.intervalMinutes}
-                    onChange={(e) =>
-                      app.patch((s) => ({
-                        ...s,
-                        health: s.health.map((x) =>
-                          x.id === h.id
-                            ? { ...x, intervalMinutes: Math.max(5, Number(e.target.value) || 5) }
-                            : x
-                        )
-                      }))
-                    }
-                  />
+              {isEditing ? (
+                <div className="health-drawer">
+                  <div className="form-grid" style={{ marginTop: 0 }}>
+                    <div className="field">
+                      <label>间隔（分钟）</label>
+                      <input
+                        type="number"
+                        min={5}
+                        value={h.intervalMinutes}
+                        onChange={(e) =>
+                          app.patch((s) => ({
+                            ...s,
+                            health: s.health.map((x) =>
+                              x.id === h.id
+                                ? { ...x, intervalMinutes: Math.max(5, Number(e.target.value) || 5) }
+                                : x
+                            )
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="field">
+                      <label>生效范围</label>
+                      <select
+                        value={h.workHoursOnly ? 'yes' : 'no'}
+                        onChange={(e) =>
+                          app.patch((s) => ({
+                            ...s,
+                            health: s.health.map((x) =>
+                              x.id === h.id ? { ...x, workHoursOnly: e.target.value === 'yes' } : x
+                            )
+                          }))
+                        }
+                      >
+                        <option value="yes">仅工作时段</option>
+                        <option value="no">全天生效</option>
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label>时段开始</label>
+                      <input
+                        type="time"
+                        value={h.workStart}
+                        onChange={(e) =>
+                          app.patch((s) => ({
+                            ...s,
+                            health: s.health.map((x) =>
+                              x.id === h.id ? { ...x, workStart: e.target.value || '09:00' } : x
+                            )
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="field">
+                      <label>时段结束</label>
+                      <input
+                        type="time"
+                        value={h.workEnd}
+                        onChange={(e) =>
+                          app.patch((s) => ({
+                            ...s,
+                            health: s.health.map((x) =>
+                              x.id === h.id ? { ...x, workEnd: e.target.value || '18:30' } : x
+                            )
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="field">
-                  <label>生效范围</label>
-                  <select
-                    value={h.workHoursOnly ? 'yes' : 'no'}
-                    onChange={(e) =>
-                      app.patch((s) => ({
-                        ...s,
-                        health: s.health.map((x) =>
-                          x.id === h.id ? { ...x, workHoursOnly: e.target.value === 'yes' } : x
-                        )
-                      }))
-                    }
-                  >
-                    <option value="yes">仅工作时段</option>
-                    <option value="no">全天生效</option>
-                  </select>
-                </div>
-                <div className="field">
-                  <label>时段开始</label>
-                  <input
-                    type="time"
-                    value={h.workStart}
-                    onChange={(e) =>
-                      app.patch((s) => ({
-                        ...s,
-                        health: s.health.map((x) =>
-                          x.id === h.id ? { ...x, workStart: e.target.value || '09:00' } : x
-                        )
-                      }))
-                    }
-                  />
-                </div>
-                <div className="field">
-                  <label>时段结束</label>
-                  <input
-                    type="time"
-                    value={h.workEnd}
-                    onChange={(e) =>
-                      app.patch((s) => ({
-                        ...s,
-                        health: s.health.map((x) =>
-                          x.id === h.id ? { ...x, workEnd: e.target.value || '18:30' } : x
-                        )
-                      }))
-                    }
-                  />
-                </div>
-              </div>
+              ) : null}
             </div>
           )
         })}

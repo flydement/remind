@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Bell,
   BellOff,
   BookOpenText,
   Calendar,
+  Check,
   ClipboardList,
   Eye,
   Heart,
@@ -30,7 +31,7 @@ import CommandPalette from './components/CommandPalette'
 import ExportExcelModal from './components/ExportExcelModal'
 import WorkEditor from './components/WorkEditor'
 import TodayPage from './pages/TodayPage'
-import WorkPage from './pages/WorkPage'
+import WorkPage, { type WorkFilter } from './pages/WorkPage'
 import ReportsPage from './pages/ReportsPage'
 import QuotesPage from './pages/QuotesPage'
 import HealthPage from './pages/HealthPage'
@@ -45,10 +46,10 @@ const NAV: { id: PageId; label: string; shortLabel: string; icon: typeof LayoutD
   { id: 'settings', label: '系统设置', shortLabel: '设置', icon: SettingsIcon }
 ]
 
-const THEME_ORDER: ThemeMode[] = THEME_OPTIONS.map((t) => t.id)
 const THEME_NAME: Record<ThemeMode, string> = Object.fromEntries(
   THEME_OPTIONS.map((t) => [t.id, t.name])
 ) as Record<ThemeMode, string>
+
 const THEME_ICON: Record<ThemeMode, typeof Sun> = {
   slate: Sun,
   eyecare: Eye,
@@ -62,9 +63,23 @@ const THEME_ICON: Record<ThemeMode, typeof Sun> = {
 export default function App() {
   const app = useAppState()
   const [page, setPage] = useState<PageId>('today')
+  const [workFilter, setWorkFilter] = useState<WorkFilter | null>(null)
   const [cmdOpen, setCmdOpen] = useState(false)
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false)
   const [globalEditing, setGlobalEditing] = useState<WorkItem | null>(null)
   const [globalExcelOpen, setGlobalExcelOpen] = useState(false)
+  const themePopRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!themeMenuOpen) return
+    const onDocClick = (e: MouseEvent): void => {
+      if (themePopRef.current && !themePopRef.current.contains(e.target as Node)) {
+        setThemeMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [themeMenuOpen])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -81,9 +96,15 @@ export default function App() {
         }
         return
       }
-      if (e.key === 'Escape' && app.reminder) {
-        app.dismissReminder()
-        return
+      if (e.key === 'Escape') {
+        if (themeMenuOpen) {
+          setThemeMenuOpen(false)
+          return
+        }
+        if (app.reminder) {
+          app.dismissReminder()
+          return
+        }
       }
       const tag = (e.target as HTMLElement | null)?.tagName
       const editable =
@@ -91,7 +112,15 @@ export default function App() {
         tag === 'TEXTAREA' ||
         tag === 'SELECT' ||
         (e.target as HTMLElement | null)?.isContentEditable
-      if (!editable && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'n' && !cmdOpen && !globalEditing) {
+      if (
+        !editable &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        e.key.toLowerCase() === 'n' &&
+        !cmdOpen &&
+        !globalEditing
+      ) {
         const input = document.querySelector<HTMLInputElement>('[data-quick-composer="true"]')
         if (input) {
           e.preventDefault()
@@ -107,7 +136,12 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [app.reminder, app.dismissReminder, cmdOpen, globalEditing])
+  }, [app.reminder, app.dismissReminder, cmdOpen, globalEditing, themeMenuOpen])
+
+  const goWorkWithFilter = (f: WorkFilter): void => {
+    setWorkFilter(f)
+    setPage('work')
+  }
 
   const totalTasks = app.stats.open + app.stats.done
   const progressPct = totalTasks > 0 ? Math.round((app.stats.done / totalTasks) * 100) : 0
@@ -119,13 +153,10 @@ export default function App() {
   const focusSec = app.focusTimer.remainingSeconds % 60
   const focusPct =
     app.focusTimer.totalSeconds > 0
-      ? Math.round(((app.focusTimer.totalSeconds - app.focusTimer.remainingSeconds) / app.focusTimer.totalSeconds) * 100)
+      ? Math.round(
+          ((app.focusTimer.totalSeconds - app.focusTimer.remainingSeconds) / app.focusTimer.totalSeconds) * 100
+        )
       : 0
-
-  const cycleTheme = (): void => {
-    const next = THEME_ORDER[(THEME_ORDER.indexOf(app.theme) + 1) % THEME_ORDER.length]
-    app.setTheme(next)
-  }
 
   const ThemeIcon = THEME_ICON[app.theme] ?? Sun
 
@@ -155,14 +186,15 @@ export default function App() {
               <button
                 key={item.id}
                 className={page === item.id ? 'active' : ''}
-                onClick={() => setPage(item.id)}
+                onClick={() => {
+                  if (item.id === 'work') setWorkFilter(null)
+                  setPage(item.id)
+                }}
               >
                 <Icon size={16} />
                 <span className="label">{item.label}</span>
                 {showWorkBadge ? (
-                  <span className={`nav-badge ${app.stats.overdue > 0 ? 'warn' : ''}`}>
-                    {app.stats.open}
-                  </span>
+                  <span className={`nav-badge ${app.stats.overdue > 0 ? 'warn' : ''}`}>{app.stats.open}</span>
                 ) : showInboxBadge ? (
                   <span className="nav-badge accent">{app.stats.unreadInbox}</span>
                 ) : null}
@@ -179,9 +211,15 @@ export default function App() {
                   <Timer size={12} />
                   {app.focusTimer.mode === 'focus' ? '专注中' : '休息中'}
                 </span>
-                <span className="focus-clock">{pad2(focusMin)}:{pad2(focusSec)}</span>
+                <span className="focus-clock">
+                  {pad2(focusMin)}:{pad2(focusSec)}
+                </span>
               </div>
-              {focusWork ? <div className="focus-task-name" title={focusWork.title}>{focusWork.title}</div> : null}
+              {focusWork ? (
+                <div className="focus-task-name" title={focusWork.title}>
+                  {focusWork.title}
+                </div>
+              ) : null}
               <div className="sidebar-progress" style={{ margin: '7px 0' }}>
                 <div className="sidebar-progress-bar accent" style={{ width: `${focusPct}%` }} />
               </div>
@@ -210,9 +248,33 @@ export default function App() {
           )}
         </div>
 
-        <div className="sidebar-foot">
+        <div className="sidebar-foot" ref={themePopRef} style={{ position: 'relative' }}>
+          {themeMenuOpen ? (
+            <div className="theme-popover" role="menu">
+              <div className="theme-popover-title">快速切换外观</div>
+              {THEME_OPTIONS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`theme-pop-item ${app.theme === t.id ? 'active' : ''}`}
+                  onClick={() => {
+                    app.setTheme(t.id)
+                    setThemeMenuOpen(false)
+                  }}
+                >
+                  <i style={{ background: t.colors[2] }} />
+                  <span>{t.name}</span>
+                  <em>{t.badge}</em>
+                  {app.theme === t.id ? <Check size={12} color="var(--primary)" /> : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
           <div className="sidebar-date">
-            <span>{app.now.getMonth() + 1}月{app.now.getDate()}日 周{weekdayCn(app.now)}</span>
+            <span>
+              {app.now.getMonth() + 1}月{app.now.getDate()}日 周{weekdayCn(app.now)}
+            </span>
             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
               <button
                 className={`foot-icon-btn ${app.stats.dndActive ? 'active-warn' : ''}`}
@@ -222,9 +284,9 @@ export default function App() {
                 {app.stats.dndActive ? <BellOff size={13} /> : <Calendar size={13} />}
               </button>
               <button
-                className="foot-icon-btn"
-                onClick={cycleTheme}
-                title={`当前主题：${THEME_NAME[app.theme]}（点击切换）`}
+                className={`foot-icon-btn ${themeMenuOpen ? 'active' : ''}`}
+                onClick={() => setThemeMenuOpen((v) => !v)}
+                title={`当前主题：${THEME_NAME[app.theme]}（点击展开 7 套主题）`}
               >
                 <ThemeIcon size={13} />
               </button>
@@ -250,8 +312,8 @@ export default function App() {
 
       <main className="main">
         <div className="page-wrap" key={page}>
-          {page === 'today' && <TodayPage app={app} go={setPage} />}
-          {page === 'work' && <WorkPage app={app} />}
+          {page === 'today' && <TodayPage app={app} go={setPage} goWorkWithFilter={goWorkWithFilter} />}
+          {page === 'work' && <WorkPage app={app} initialFilter={workFilter} />}
           {page === 'reports' && <ReportsPage app={app} />}
           {page === 'quotes' && <QuotesPage app={app} />}
           {page === 'health' && <HealthPage app={app} />}
@@ -266,7 +328,10 @@ export default function App() {
             <button
               key={item.id}
               className={page === item.id ? 'active' : ''}
-              onClick={() => setPage(item.id)}
+              onClick={() => {
+                if (item.id === 'work') setWorkFilter(null)
+                setPage(item.id)
+              }}
             >
               <Icon size={17} />
               <span>{item.shortLabel}</span>
@@ -317,27 +382,20 @@ export default function App() {
             <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               {app.reminder.workId ? (
                 <>
-                  <button
-                    className="btn ghost small"
-                    onClick={() => app.snoozeReminder(app.reminder!.workId!, 10)}
-                  >
+                  <button className="btn ghost small" onClick={() => app.snoozeReminder(app.reminder!.workId!, 10)}>
                     延后 10 分钟
                   </button>
-                  <button
-                    className="btn ghost small"
-                    onClick={() => app.snoozeReminder(app.reminder!.workId!, 60)}
-                  >
+                  <button className="btn ghost small" onClick={() => app.snoozeReminder(app.reminder!.workId!, 60)}>
                     延后 1 小时
                   </button>
-                  <button
-                    className="btn forest small"
-                    onClick={() => app.completeReminder(app.reminder!.workId!)}
-                  >
+                  <button className="btn forest small" onClick={() => app.completeReminder(app.reminder!.workId!)}>
                     标记完成
                   </button>
                 </>
               ) : null}
-              <button className="btn small" onClick={() => app.dismissReminder()}>确认知晓</button>
+              <button className="btn small" onClick={() => app.dismissReminder()}>
+                确认知晓
+              </button>
             </div>
           </div>
         </div>
@@ -352,11 +410,7 @@ export default function App() {
         onOpenExcel={() => setGlobalExcelOpen(true)}
       />
 
-      <ExportExcelModal
-        open={globalExcelOpen}
-        app={app}
-        onClose={() => setGlobalExcelOpen(false)}
-      />
+      <ExportExcelModal open={globalExcelOpen} app={app} onClose={() => setGlobalExcelOpen(false)} />
 
       {globalEditing ? (
         <WorkEditor
