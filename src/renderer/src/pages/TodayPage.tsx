@@ -138,9 +138,13 @@ export default function TodayPage({
         <div
           className="card stat clickable"
           onClick={() => {
-            if (!app.focusTimer.active) app.startFocus(25)
+            if (!app.focusTimer.active) app.startFocus()
           }}
-          title={app.focusTimer.active ? '专注计时进行中' : '点击开启 25 分钟番茄专注'}
+          title={
+            app.focusTimer.active
+              ? '专注计时进行中'
+              : `点击开启 ${app.defaultFocusMinutes} 分钟番茄专注`
+          }
         >
           <div className="stat-top">
             <span>今日专注（分钟）</span>
@@ -217,7 +221,7 @@ export default function TodayPage({
             }
             onToggle={(w) => app.toggleWork(w)}
             onOpen={setEditing}
-            onStartFocus={(w) => app.startFocus(25, w.id)}
+            onStartFocus={(w) => app.startFocus(undefined, w.id)}
             onTogglePin={(id) => app.togglePinWork(id)}
             onToggleSubtask={(wId, sId) => app.toggleSubtask(wId, sId)}
             onCycleDoing={(w) => app.setWorkStatus(w.id, w.status === 'doing' ? 'todo' : 'doing')}

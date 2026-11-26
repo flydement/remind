@@ -25,6 +25,13 @@ export type WorkFilter = 'open' | 'doing' | 'today' | 'overdue' | 'done' | 'all'
 type ViewMode = 'list' | 'kanban'
 type SortBy = 'due' | 'priority' | 'created'
 
+interface WorkSection {
+  id: string
+  label: string
+  tone?: 'danger' | 'warn' | 'primary' | 'accent'
+  items: WorkItem[]
+}
+
 export default function WorkPage({
   app,
   initialFilter
@@ -106,6 +113,44 @@ export default function WorkPage({
     })
     return sortItems(filtered, sortBy, filter === 'done')
   }, [baseMatched, filter, sortBy, app.now])
+
+  const groupedSections = useMemo<WorkSection[] | null>(() => {
+    if (sortBy !== 'due' || (filter !== 'open' && filter !== 'all') || listItems.length === 0) {
+      return null
+    }
+    const todayStart = new Date(app.now.getFullYear(), app.now.getMonth(), app.now.getDate()).getTime()
+    const sevenDaysEnd = todayStart + 8 * 86_400_000
+
+    const overdue: WorkItem[] = []
+    const today: WorkItem[] = []
+    const week: WorkItem[] = []
+    const later: WorkItem[] = []
+    const done: WorkItem[] = []
+
+    for (const w of listItems) {
+      if (w.status === 'done') {
+        done.push(w)
+      } else if (isPastDue(w.dueAt, app.now)) {
+        overdue.push(w)
+      } else if (isSameDay(new Date(w.dueAt), app.now)) {
+        today.push(w)
+      } else if (new Date(w.dueAt).getTime() < sevenDaysEnd) {
+        week.push(w)
+      } else {
+        later.push(w)
+      }
+    }
+
+    const sections: WorkSection[] = []
+    if (overdue.length) sections.push({ id: 'overdue', label: '已逾期', tone: 'danger', items: overdue })
+    if (today.length) sections.push({ id: 'today', label: '今日到期', tone: 'warn', items: today })
+    if (week.length) sections.push({ id: 'week', label: '近 7 天', tone: 'primary', items: week })
+    if (later.length) sections.push({ id: 'later', label: '后续排期', items: later })
+    if (done.length) sections.push({ id: 'done', label: '已完成', tone: 'accent', items: done })
+
+    // Only group when items span at least 2 time horizons (keeps single-bucket lists clean)
+    return sections.length > 1 ? sections : null
+  }, [listItems, sortBy, filter, app.now])
 
   const kanbanCols = useMemo(() => {
     return {
@@ -204,7 +249,11 @@ export default function WorkPage({
                 <button className="mini-btn ghost" onClick={() => app.setWorkStatus(w.id, 'todo')} title="退回待办">
                   <RotateCcw size={11} />
                 </button>
-                <button className="mini-btn" onClick={() => app.startFocus(25, w.id)} title="开启 25 分钟专注">
+                <button
+                  className="mini-btn"
+                  onClick={() => app.startFocus(undefined, w.id)}
+                  title={`开启 ${app.defaultFocusMinutes} 分钟专注`}
+                >
                   <Play size={11} /> 专注
                 </button>
               </>
@@ -229,11 +278,23 @@ export default function WorkPage({
     )
   }
 
+  const workListCommonProps = {
+    now: app.now,
+    onToggle: (w: WorkItem) => app.toggleWork(w),
+    onOpen: setEditing,
+    onDelete: (w: WorkItem) => app.deleteWork(w.id),
+    onStartFocus: (w: WorkItem) => app.startFocus(undefined, w.id),
+    onTogglePin: (id: string) => app.togglePinWork(id),
+    onToggleSubtask: (wId: string, sId: string) => app.toggleSubtask(wId, sId),
+    onCycleDoing: (w: WorkItem) => app.setWorkStatus(w.id, w.status === 'doing' ? 'todo' : 'doing'),
+    onPostponeOneDay: (w: WorkItem) => app.postponeWorkItem(w.id, 1)
+  }
+
   return (
     <>
       <PageHead
         title="工作事项"
-        sub="自然语言快速排期、多维筛选，支持列表与可拖拽看板双视图。"
+        sub="自然语言快速排期、按时间轴分组扫描，支持列表与可拖拽看板双视图。"
         right={
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button
@@ -294,7 +355,7 @@ export default function WorkPage({
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as SortBy)}
           >
-            <option value="due">按截止时间排序</option>
+            <option value="due">按截止时间分组</option>
             <option value="priority">按优先级排序</option>
             <option value="created">按最新创建排序</option>
           </select>
@@ -369,27 +430,58 @@ export default function WorkPage({
 
       {view === 'list' ? (
         <div className="card">
-          <WorkList
-            items={listItems}
-            now={app.now}
-            empty={query.trim() || activeTag ? '没有匹配筛选条件的工作项。' : '当前列表为空，在上方输入一句话即可创建。'}
-            onToggle={(w) => app.toggleWork(w)}
-            onOpen={setEditing}
-            onDelete={(w) => app.deleteWork(w.id)}
-            onStartFocus={(w) => app.startFocus(25, w.id)}
-            onTogglePin={(id) => app.togglePinWork(id)}
-            onToggleSubtask={(wId, sId) => app.toggleSubtask(wId, sId)}
-            onCycleDoing={(w) => app.setWorkStatus(w.id, w.status === 'doing' ? 'todo' : 'doing')}
-            onPostponeOneDay={(w) => app.postponeWorkItem(w.id, 1)}
-          />
+          {groupedSections ? (
+            <div className="work-groups">
+              {groupedSections.map((sec) => (
+                <section key={sec.id} className="work-group">
+                  <div className="work-group-head">
+                    <span className={`work-group-title ${sec.tone ?? ''}`}>{sec.label}</span>
+                    <span className={`tag ${sec.tone ?? ''}`}>{sec.items.length}</span>
+                  </div>
+                  <WorkList items={sec.items} empty="" {...workListCommonProps} />
+                </section>
+              ))}
+            </div>
+          ) : (
+            <WorkList
+              items={listItems}
+              empty={
+                query.trim() || activeTag
+                  ? '没有匹配筛选条件的工作项。'
+                  : '当前列表为空，按 N 在上方输入一句话即可快速创建。'
+              }
+              {...workListCommonProps}
+            />
+          )}
         </div>
       ) : (
         <div className="kanban-grid">
           {(
             [
-              { id: 'todo' as const, label: '待办事项', tone: '', badgeTone: '', items: kanbanCols.todo, emptyText: '暂无待办，可将卡片拖入此列' },
-              { id: 'doing' as const, label: '推进中', tone: 'var(--primary)', badgeTone: 'primary', items: kanbanCols.doing, emptyText: '拖入事项开始推进' },
-              { id: 'done' as const, label: '已完成（近 20 条）', tone: 'var(--forest)', badgeTone: 'accent', items: kanbanCols.done, emptyText: '拖入事项标记完成' }
+              {
+                id: 'todo' as const,
+                label: '待办事项',
+                tone: '',
+                badgeTone: '',
+                items: kanbanCols.todo,
+                emptyText: '暂无待办，可将卡片拖入此列'
+              },
+              {
+                id: 'doing' as const,
+                label: '推进中',
+                tone: 'var(--primary)',
+                badgeTone: 'primary',
+                items: kanbanCols.doing,
+                emptyText: '拖入事项开始推进'
+              },
+              {
+                id: 'done' as const,
+                label: '已完成（近 20 条）',
+                tone: 'var(--forest)',
+                badgeTone: 'accent',
+                items: kanbanCols.done,
+                emptyText: '拖入事项标记完成'
+              }
             ]
           ).map((col) => (
             <div
@@ -414,7 +506,11 @@ export default function WorkPage({
                 <span className={`tag ${col.badgeTone}`}>{col.items.length}</span>
               </div>
               <div className="kanban-cards">
-                {col.items.length ? col.items.map((w) => renderKanbanCard(w, col.id)) : <div className="empty">{col.emptyText}</div>}
+                {col.items.length ? (
+                  col.items.map((w) => renderKanbanCard(w, col.id))
+                ) : (
+                  <div className="empty">{col.emptyText}</div>
+                )}
               </div>
             </div>
           ))}

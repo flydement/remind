@@ -722,6 +722,7 @@ export function useAppState() {
     flash,
     setFlash,
     focusTimer,
+    defaultFocusMinutes: state.settings.focusMinutesDefault ?? 25,
     startFocus,
     pauseResumeFocus,
     stopFocus,

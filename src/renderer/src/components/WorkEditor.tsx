@@ -1,15 +1,34 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Pin, Play, Plus, Trash2, X } from 'lucide-react'
-import { normalizePriority, type NotifyFrequency, type RepeatRule, type SubtaskItem, type WorkItem, type WorkPriority, type WorkStatus } from '@shared/types'
+import {
+  normalizePriority,
+  type NotifyFrequency,
+  type RepeatRule,
+  type SubtaskItem,
+  type WorkItem,
+  type WorkPriority,
+  type WorkStatus
+} from '@shared/types'
 import { createId } from '@shared/ids'
 import { previewNotifyDate } from '@shared/parser'
-import { pad2 } from '@shared/time'
+import { addDays, pad2, startOfWeek } from '@shared/time'
 import type { useAppState } from '../state'
 
 function toDateInput(iso: string): string {
   const d = new Date(iso)
   if (!Number.isFinite(d.getTime())) return ''
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+function makeDueAt(date: Date): string {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 18, 0, 0, 0).toISOString()
+}
+
+function diffDaysFromToday(dueIso: string, now: Date): number {
+  const due = new Date(dueIso)
+  const a = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime()
+  const b = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  return Math.max(0, Math.round((a - b) / 86_400_000))
 }
 
 export default function WorkEditor({
@@ -67,6 +86,22 @@ export default function WorkEditor({
     [draft.dueAt, draft.notify.advanceDays, draft.notify.time, draft.notify.frequency]
   )
 
+  const now = app?.now ?? new Date()
+  const focusMins = app?.defaultFocusMinutes ?? 25
+
+  const dateShortcuts = useMemo(() => {
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const tomorrow = addDays(today, 1)
+    const nextMonday = addDays(startOfWeek(today), 7)
+    const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+    return [
+      { label: '今天', iso: makeDueAt(today) },
+      { label: '明天', iso: makeDueAt(tomorrow) },
+      { label: '下周一', iso: makeDueAt(nextMonday) },
+      { label: '月底', iso: makeDueAt(monthEnd) }
+    ]
+  }, [now])
+
   const handleDateChange = (raw: string): void => {
     if (!raw) return
     const parts = raw.split('-').map(Number)
@@ -114,6 +149,8 @@ export default function WorkEditor({
 
   const subtasks = draft.subtasks ?? []
   const doneSubCount = subtasks.filter((s) => s.done).length
+  const subPct = subtasks.length > 0 ? Math.round((doneSubCount / subtasks.length) * 100) : 0
+  const daysUntilDue = diffDaysFromToday(draft.dueAt, now)
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -136,12 +173,16 @@ export default function WorkEditor({
                 type="button"
                 className="btn ghost small"
                 onClick={() => {
-                  onSave({ ...draft, title: draft.title.trim() || '未命名工作项', updatedAt: new Date().toISOString() })
-                  app.startFocus(25, draft.id)
+                  onSave({
+                    ...draft,
+                    title: draft.title.trim() || '未命名工作项',
+                    updatedAt: new Date().toISOString()
+                  })
+                  app.startFocus(focusMins, draft.id)
                 }}
               >
                 <Play size={12} />
-                专注 25m
+                专注 {focusMins}m
               </button>
             ) : null}
             <button className="icon-btn" onClick={onClose} title="关闭 (Esc)">
@@ -150,7 +191,11 @@ export default function WorkEditor({
           </div>
         </div>
 
-        {draft.sourceText ? <p className="muted" style={{ margin: '4px 0 0' }}>解析自：「{draft.sourceText}」</p> : null}
+        {draft.sourceText ? (
+          <p className="muted" style={{ margin: '4px 0 0' }}>
+            解析自：「{draft.sourceText}」
+          </p>
+        ) : null}
 
         <div className="field" style={{ marginTop: 12 }}>
           <label>事项名称</label>
@@ -190,6 +235,21 @@ export default function WorkEditor({
               value={toDateInput(draft.dueAt)}
               onChange={(e) => handleDateChange(e.target.value)}
             />
+            <div className="preset-pills">
+              {dateShortcuts.map((sc) => {
+                const active = toDateInput(draft.dueAt) === toDateInput(sc.iso)
+                return (
+                  <button
+                    key={sc.label}
+                    type="button"
+                    className={`preset-pill ${active ? 'active' : ''}`}
+                    onClick={() => setDraft({ ...draft, dueAt: sc.iso })}
+                  >
+                    {sc.label}
+                  </button>
+                )
+              })}
+            </div>
           </div>
           <div className="field">
             <label>循环周期</label>
@@ -222,7 +282,13 @@ export default function WorkEditor({
                 #{t}
                 <button
                   type="button"
-                  style={{ border: 0, background: 'transparent', color: 'inherit', cursor: 'pointer', padding: '0 0 0 3px' }}
+                  style={{
+                    border: 0,
+                    background: 'transparent',
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    padding: '0 0 0 3px'
+                  }}
                   onClick={() => removeTag(t)}
                 >
                   ×
@@ -241,30 +307,51 @@ export default function WorkEditor({
                   }
                 }}
               />
-              <button type="button" className="btn ghost small" onClick={addTag}>添加</button>
+              <button type="button" className="btn ghost small" onClick={addTag}>
+                添加
+              </button>
             </div>
           </div>
         </div>
 
         <div className="field" style={{ marginTop: 12 }}>
-          <label>子任务拆解 {subtasks.length > 0 ? `(${doneSubCount}/${subtasks.length})` : ''}</label>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <label>子任务拆解 {subtasks.length > 0 ? `(${doneSubCount}/${subtasks.length})` : ''}</label>
+            {subtasks.length > 0 ? (
+              <span className="muted" style={{ fontSize: 11.5 }}>
+                完成度 {subPct}%
+              </span>
+            ) : null}
+          </div>
           {subtasks.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 6 }}>
-              {subtasks.map((st) => (
-                <div key={st.id} className={`subtask-row ${st.done ? 'done' : ''}`}>
-                  <button
-                    type="button"
-                    className={`check ${st.done ? 'on' : ''}`}
-                    style={{ width: 16, height: 16, marginTop: 0 }}
-                    onClick={() => toggleSub(st.id)}
-                  />
-                  <span style={{ flex: 1, cursor: 'pointer' }} onClick={() => toggleSub(st.id)}>{st.title}</span>
-                  <button type="button" className="icon-btn" style={{ width: 22, height: 22 }} onClick={() => removeSub(st.id)}>
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="sidebar-progress" style={{ margin: '0 0 6px' }}>
+                <div className="sidebar-progress-bar accent" style={{ width: `${subPct}%` }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 6 }}>
+                {subtasks.map((st) => (
+                  <div key={st.id} className={`subtask-row ${st.done ? 'done' : ''}`}>
+                    <button
+                      type="button"
+                      className={`check ${st.done ? 'on' : ''}`}
+                      style={{ width: 16, height: 16, marginTop: 0 }}
+                      onClick={() => toggleSub(st.id)}
+                    />
+                    <span style={{ flex: 1, cursor: 'pointer' }} onClick={() => toggleSub(st.id)}>
+                      {st.title}
+                    </span>
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      style={{ width: 22, height: 22 }}
+                      onClick={() => removeSub(st.id)}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
           ) : null}
           <div style={{ display: 'flex', gap: 6 }}>
             <input
@@ -298,37 +385,92 @@ export default function WorkEditor({
         </div>
 
         {draft.notify.enabled ? (
-          <div className="form-grid">
-            <div className="field">
-              <label>提前天数</label>
-              <input
-                type="number"
-                min={0}
-                value={draft.notify.advanceDays}
-                onChange={(e) => setDraft({ ...draft, notify: { ...draft.notify, advanceDays: Math.max(0, Number(e.target.value) || 0) } })}
-              />
-            </div>
-            <div className="field">
-              <label>提醒时刻</label>
-              <input
-                type="time"
-                value={draft.notify.time}
-                onChange={(e) => setDraft({ ...draft, notify: { ...draft.notify, time: e.target.value || '09:00' } })}
-              />
-            </div>
-            <div className="field" style={{ gridColumn: '1 / -1' }}>
-              <label>提醒频次</label>
-              <select
-                value={draft.notify.frequency}
-                onChange={(e) => setDraft({ ...draft, notify: { ...draft.notify, frequency: e.target.value as NotifyFrequency } })}
+          <>
+            <div className="preset-pills" style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                className={`preset-pill ${draft.notify.advanceDays === 0 && draft.notify.frequency === 'once' ? 'active' : ''}`}
+                onClick={() =>
+                  setDraft({ ...draft, notify: { ...draft.notify, advanceDays: 0, frequency: 'once' } })
+                }
               >
-                <option value="once">仅一次（提醒日当天触发）</option>
-                <option value="daily">每天一次直到截止日</option>
-                <option value="weekdays">每个工作日提醒</option>
-                <option value="hourly">每小时提醒（提醒日当天起）</option>
-              </select>
+                当天提醒
+              </button>
+              <button
+                type="button"
+                className={`preset-pill ${draft.notify.advanceDays === 1 && draft.notify.frequency === 'once' ? 'active' : ''}`}
+                onClick={() =>
+                  setDraft({ ...draft, notify: { ...draft.notify, advanceDays: 1, frequency: 'once' } })
+                }
+              >
+                提前 1 天
+              </button>
+              <button
+                type="button"
+                className={`preset-pill ${draft.notify.advanceDays === 3 && draft.notify.frequency === 'once' ? 'active' : ''}`}
+                onClick={() =>
+                  setDraft({ ...draft, notify: { ...draft.notify, advanceDays: 3, frequency: 'once' } })
+                }
+              >
+                提前 3 天
+              </button>
+              <button
+                type="button"
+                className={`preset-pill ${draft.notify.advanceDays === daysUntilDue && draft.notify.frequency === 'daily' ? 'active' : ''}`}
+                onClick={() =>
+                  setDraft({
+                    ...draft,
+                    notify: { ...draft.notify, advanceDays: daysUntilDue, frequency: 'daily' }
+                  })
+                }
+              >
+                从今天起每天
+              </button>
             </div>
-          </div>
+            <div className="form-grid" style={{ marginTop: 8 }}>
+              <div className="field">
+                <label>提前天数</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={draft.notify.advanceDays}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      notify: { ...draft.notify, advanceDays: Math.max(0, Number(e.target.value) || 0) }
+                    })
+                  }
+                />
+              </div>
+              <div className="field">
+                <label>提醒时刻</label>
+                <input
+                  type="time"
+                  value={draft.notify.time}
+                  onChange={(e) =>
+                    setDraft({ ...draft, notify: { ...draft.notify, time: e.target.value || '09:00' } })
+                  }
+                />
+              </div>
+              <div className="field" style={{ gridColumn: '1 / -1' }}>
+                <label>提醒频次</label>
+                <select
+                  value={draft.notify.frequency}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      notify: { ...draft.notify, frequency: e.target.value as NotifyFrequency }
+                    })
+                  }
+                >
+                  <option value="once">仅一次（提醒日当天触发）</option>
+                  <option value="daily">每天一次直到截止日</option>
+                  <option value="weekdays">每个工作日提醒</option>
+                  <option value="hourly">每小时提醒（提醒日当天起）</option>
+                </select>
+              </div>
+            </div>
+          </>
         ) : null}
 
         <div className="field" style={{ marginTop: 12 }}>
@@ -341,22 +483,45 @@ export default function WorkEditor({
           />
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 18, justifyContent: 'space-between', alignItems: 'center' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            marginTop: 18,
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}
+        >
           <div>
             {onDelete ? (
-              <button type="button" className="btn ghost small" style={{ color: 'var(--danger)' }} onClick={() => onDelete(draft)}>
+              <button
+                type="button"
+                className="btn ghost small"
+                style={{ color: 'var(--danger)' }}
+                onClick={() => onDelete(draft)}
+              >
                 <Trash2 size={13} />
                 删除事项
               </button>
             ) : null}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span className="muted" style={{ marginRight: 4 }}>Ctrl+Enter 保存</span>
-            <button type="button" className="btn ghost" onClick={onClose}>取消</button>
+            <span className="muted" style={{ marginRight: 4 }}>
+              Ctrl+Enter 保存
+            </span>
+            <button type="button" className="btn ghost" onClick={onClose}>
+              取消
+            </button>
             <button
               type="button"
               className="btn"
-              onClick={() => onSave({ ...draft, title: draft.title.trim() || '未命名工作项', updatedAt: new Date().toISOString() })}
+              onClick={() =>
+                onSave({
+                  ...draft,
+                  title: draft.title.trim() || '未命名工作项',
+                  updatedAt: new Date().toISOString()
+                })
+              }
             >
               保存更改
             </button>

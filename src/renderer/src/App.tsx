@@ -66,20 +66,25 @@ export default function App() {
   const [workFilter, setWorkFilter] = useState<WorkFilter | null>(null)
   const [cmdOpen, setCmdOpen] = useState(false)
   const [themeMenuOpen, setThemeMenuOpen] = useState(false)
+  const [mobileThemeOpen, setMobileThemeOpen] = useState(false)
   const [globalEditing, setGlobalEditing] = useState<WorkItem | null>(null)
   const [globalExcelOpen, setGlobalExcelOpen] = useState(false)
   const themePopRef = useRef<HTMLDivElement | null>(null)
+  const mobileThemeRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    if (!themeMenuOpen) return
+    if (!themeMenuOpen && !mobileThemeOpen) return
     const onDocClick = (e: MouseEvent): void => {
-      if (themePopRef.current && !themePopRef.current.contains(e.target as Node)) {
+      if (themeMenuOpen && themePopRef.current && !themePopRef.current.contains(e.target as Node)) {
         setThemeMenuOpen(false)
+      }
+      if (mobileThemeOpen && mobileThemeRef.current && !mobileThemeRef.current.contains(e.target as Node)) {
+        setMobileThemeOpen(false)
       }
     }
     document.addEventListener('mousedown', onDocClick)
     return () => document.removeEventListener('mousedown', onDocClick)
-  }, [themeMenuOpen])
+  }, [themeMenuOpen, mobileThemeOpen])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -97,8 +102,9 @@ export default function App() {
         return
       }
       if (e.key === 'Escape') {
-        if (themeMenuOpen) {
+        if (themeMenuOpen || mobileThemeOpen) {
           setThemeMenuOpen(false)
+          setMobileThemeOpen(false)
           return
         }
         if (app.reminder) {
@@ -136,7 +142,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [app.reminder, app.dismissReminder, cmdOpen, globalEditing, themeMenuOpen])
+  }, [app.reminder, app.dismissReminder, cmdOpen, globalEditing, themeMenuOpen, mobileThemeOpen])
 
   const goWorkWithFilter = (f: WorkFilter): void => {
     setWorkFilter(f)
@@ -158,6 +164,7 @@ export default function App() {
         )
       : 0
 
+  const focusPresets = Array.from(new Set([15, app.defaultFocusMinutes, 45])).sort((a, b) => a - b)
   const ThemeIcon = THEME_ICON[app.theme] ?? Sun
 
   return (
@@ -235,15 +242,34 @@ export default function App() {
               </div>
             </>
           ) : (
-            <div className="focus-idle-row">
-              <div>
-                <div className="focus-idle-title">番茄专注</div>
-                <div className="focus-idle-sub">今日 {app.stats.todayFocusMinutes} 分钟</div>
+            <div>
+              <div className="focus-idle-row">
+                <div>
+                  <div className="focus-idle-title">番茄专注</div>
+                  <div className="focus-idle-sub">今日 {app.stats.todayFocusMinutes} 分钟</div>
+                </div>
+                <button
+                  className="mini-btn"
+                  onClick={() => app.startFocus(app.defaultFocusMinutes)}
+                  title={`开启 ${app.defaultFocusMinutes} 分钟专注`}
+                >
+                  <Play size={12} />
+                  开始
+                </button>
               </div>
-              <button className="mini-btn" onClick={() => app.startFocus(25)} title="开启 25 分钟专注">
-                <Play size={12} />
-                25m
-              </button>
+              <div className="focus-presets">
+                {focusPresets.map((mins) => (
+                  <button
+                    key={mins}
+                    type="button"
+                    className={`focus-preset-btn ${mins === app.defaultFocusMinutes ? 'default' : ''}`}
+                    onClick={() => app.startFocus(mins)}
+                    title={`立即开启 ${mins} 分钟专注`}
+                  >
+                    {mins}m
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -311,6 +337,65 @@ export default function App() {
       </aside>
 
       <main className="main">
+        <header className="mobile-topbar">
+          <div className="mobile-brand" onClick={() => setPage('today')}>
+            <img src={logoSvg} alt="小猫工作助手" />
+            <span>小猫工作助手</span>
+          </div>
+          <div className="mobile-actions" ref={mobileThemeRef}>
+            {app.focusTimer.active ? (
+              <button
+                type="button"
+                className="mobile-focus-pill"
+                onClick={app.pauseResumeFocus}
+                title={app.focusTimer.paused ? '继续专注' : '暂停专注'}
+              >
+                <Timer size={12} />
+                <span>
+                  {pad2(focusMin)}:{pad2(focusSec)}
+                </span>
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="icon-btn"
+              title="搜索与快捷命令"
+              onClick={() => setCmdOpen(true)}
+            >
+              <Search size={15} />
+            </button>
+            <button
+              type="button"
+              className={`icon-btn ${mobileThemeOpen ? 'active' : ''}`}
+              title={`切换外观（当前：${THEME_NAME[app.theme]}）`}
+              onClick={() => setMobileThemeOpen((v) => !v)}
+            >
+              <ThemeIcon size={15} />
+            </button>
+            {mobileThemeOpen ? (
+              <div className="theme-popover mobile-theme-popover" role="menu">
+                <div className="theme-popover-title">切换外观主题</div>
+                {THEME_OPTIONS.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className={`theme-pop-item ${app.theme === t.id ? 'active' : ''}`}
+                    onClick={() => {
+                      app.setTheme(t.id)
+                      setMobileThemeOpen(false)
+                    }}
+                  >
+                    <i style={{ background: t.colors[2] }} />
+                    <span>{t.name}</span>
+                    <em>{t.badge}</em>
+                    {app.theme === t.id ? <Check size={12} color="var(--primary)" /> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </header>
+
         <div className="page-wrap" key={page}>
           {page === 'today' && <TodayPage app={app} go={setPage} goWorkWithFilter={goWorkWithFilter} />}
           {page === 'work' && <WorkPage app={app} initialFilter={workFilter} />}

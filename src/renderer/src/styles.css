@@ -1991,6 +1991,130 @@ body { overflow: hidden; }
   color: var(--ink-faint);
 }
 
+/* === V2.1 Presets, Time Groups, Theme Mini-Previews & Mobile Bar === */
+.theme-mini-preview {
+  height: 44px;
+  border-radius: 7px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 24% 1fr;
+}
+.theme-mini-side {
+  height: 100%;
+}
+.theme-mini-body {
+  padding: 6px;
+  display: flex;
+  align-items: center;
+}
+.theme-mini-card {
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+  padding: 5px 6px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.theme-mini-pill {
+  width: 16px;
+  height: 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.theme-mini-line {
+  flex: 1;
+  height: 5px;
+  border-radius: 999px;
+}
+
+.preset-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.preset-pill {
+  appearance: none;
+  border: 1px solid var(--line-strong);
+  background: var(--card-subtle);
+  color: var(--ink-soft);
+  border-radius: 999px;
+  padding: 2.5px 9px;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all 0.14s var(--ease);
+}
+.preset-pill:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.preset-pill.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.work-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.work-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.work-group-title {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.work-group-title.danger { color: var(--danger); }
+.work-group-title.warn { color: var(--honey); }
+.work-group-title.primary { color: var(--primary); }
+.work-group-title.accent { color: var(--forest); }
+
+.focus-presets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin-top: 8px;
+}
+.focus-preset-btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--card-subtle);
+  color: var(--ink-soft);
+  border-radius: 7px;
+  padding: 4px 0;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: all 0.14s var(--ease);
+}
+.focus-preset-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+.focus-preset-btn.default {
+  border-color: var(--primary-soft);
+  color: var(--primary);
+}
+
+.mobile-topbar {
+  display: none;
+}
+
 .mobile-nav {
   display: none;
 }
@@ -2011,7 +2135,58 @@ body { overflow: hidden; }
 @media (max-width: 720px) {
   .app { grid-template-columns: 1fr; }
   .sidebar { display: none; }
-  .main { padding: 18px 16px 84px; }
+  .main { padding: 12px 14px 84px; }
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 0 2px 12px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .mobile-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .mobile-brand img {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+  }
+  .mobile-actions {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mobile-focus-pill {
+    appearance: none;
+    border: 1px solid var(--primary);
+    background: var(--primary-soft);
+    color: var(--primary);
+    border-radius: 999px;
+    padding: 4px 9px;
+    font-size: 11.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+  }
+  .mobile-theme-popover {
+    left: auto;
+    right: 0;
+    bottom: auto;
+    top: calc(100% + 8px);
+    min-width: 196px;
+  }
   .mobile-nav {
     position: fixed;
     left: 0;
