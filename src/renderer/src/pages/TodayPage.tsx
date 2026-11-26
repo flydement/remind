@@ -6,13 +6,14 @@ import {
   CheckCheck,
   ClipboardList,
   FastForward,
+  HelpCircle,
   SlidersHorizontal,
   Sparkles,
   Timer,
   Trash2
 } from 'lucide-react'
 import type { PageId, WorkItem } from '@shared/types'
-import { describeDraft, parseWorkText } from '@shared/parser'
+import { describeDraft, parseWorkText, WORK_SYNTAX_GUIDE } from '@shared/parser'
 import { formatDateTimeCn } from '@shared/time'
 import PageHead from '../components/PageHead'
 import { newWorkItem, type useAppState } from '../state'
@@ -20,9 +21,9 @@ import WorkEditor from '../components/WorkEditor'
 import WorkList from '../components/WorkList'
 
 const SAMPLES = [
-  '月报 8月11号 提前5天通知 #汇报',
-  '周五 下午3点半 架构评审 重点',
-  '3天后 提交季度预算 #财务'
+  '任务：整理财务月报 截止12月31日 从今天开始每天早上10点提醒我一次 #财务',
+  '周五 下午3点半 架构评审 #研发 重点',
+  '月报 8月11号 提前5天通知 #汇报'
 ]
 
 export default function TodayPage({
@@ -35,6 +36,7 @@ export default function TodayPage({
   const [text, setText] = useState('')
   const [editing, setEditing] = useState<WorkItem | null>(null)
   const [showAnswer, setShowAnswer] = useState(false)
+  const [showSyntax, setShowSyntax] = useState(false)
   const [inboxFilter, setInboxFilter] = useState<'all' | 'work' | 'health' | 'quote'>('all')
   const draft = useMemo(() => parseWorkText(text, app.now), [text, app.now])
   const quote =
@@ -74,6 +76,7 @@ export default function TodayPage({
       title: draft.title,
       dueAt: draft.dueAt,
       priority: draft.priority,
+      assignee: draft.assignee,
       tags: draft.tags,
       notify: draft.notify,
       repeat: draft.repeat,
@@ -94,6 +97,7 @@ export default function TodayPage({
         title: draft.title,
         dueAt: draft.dueAt,
         priority: draft.priority,
+        assignee: draft.assignee,
         tags: draft.tags,
         notify: draft.notify,
         repeat: draft.repeat,
@@ -165,14 +169,24 @@ export default function TodayPage({
       </div>
 
       <div className="card composer-card" style={{ marginBottom: 18 }}>
-        <h3><Sparkles size={15} color="var(--primary)" /> 快速新建工作项</h3>
+        <div className="section-head" style={{ marginBottom: 10 }}>
+          <h3 style={{ margin: 0 }}><Sparkles size={15} color="var(--primary)" /> 快速新建工作项</h3>
+          <button
+            type="button"
+            className="btn ghost small"
+            onClick={() => setShowSyntax((v) => !v)}
+          >
+            <HelpCircle size={13} />
+            {showSyntax ? '收起语法说明' : '创建语法说明'}
+          </button>
+        </div>
         <div className="composer">
           <div className="composer-input-wrap">
             <Sparkles size={15} className="composer-icon" />
             <input
               data-quick-composer="true"
               value={text}
-              placeholder="输入事项后回车直接创建，例如：周五 15:30 架构评审 #研发 重点"
+              placeholder="支持长句或短词，如：任务：整理财务月报 截止2026年12月31日 从今天开始每天早上10点提醒我一次"
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -207,6 +221,16 @@ export default function TodayPage({
             ))}
           </div>
         )}
+        {showSyntax ? (
+          <div className="syntax-guide">
+            {WORK_SYNTAX_GUIDE.map((g) => (
+              <div key={g.category} className="syntax-item">
+                <b>{g.category}</b>
+                <span>{g.patterns}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div className="grid-2">

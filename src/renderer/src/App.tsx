@@ -5,20 +5,24 @@ import {
   BookOpenText,
   Calendar,
   ClipboardList,
+  Eye,
+  Heart,
   HeartPulse,
   LayoutDashboard,
+  Minimize2,
   Moon,
   Palette,
   Pause,
   Play,
   Search,
   Settings as SettingsIcon,
+  Sparkles,
   Square,
   Sun,
   Timer,
   X
 } from 'lucide-react'
-import type { PageId, ThemeMode, WorkItem } from '@shared/types'
+import { THEME_OPTIONS, type PageId, type ThemeMode, type WorkItem } from '@shared/types'
 import { pad2, weekdayCn } from '@shared/time'
 import { useAppState } from './state'
 import logoSvg from './assets/logo.svg'
@@ -41,11 +45,18 @@ const NAV: { id: PageId; label: string; shortLabel: string; icon: typeof LayoutD
   { id: 'settings', label: '系统设置', shortLabel: '设置', icon: SettingsIcon }
 ]
 
-const THEME_ORDER: ThemeMode[] = ['slate', 'paper', 'dark']
-const THEME_NAME: Record<ThemeMode, string> = {
-  slate: '严谨商务',
-  paper: '温润纸感',
-  dark: '深色专注'
+const THEME_ORDER: ThemeMode[] = THEME_OPTIONS.map((t) => t.id)
+const THEME_NAME: Record<ThemeMode, string> = Object.fromEntries(
+  THEME_OPTIONS.map((t) => [t.id, t.name])
+) as Record<ThemeMode, string>
+const THEME_ICON: Record<ThemeMode, typeof Sun> = {
+  slate: Sun,
+  eyecare: Eye,
+  minimal: Minimize2,
+  cute: Heart,
+  cartoon: Sparkles,
+  paper: Palette,
+  dark: Moon
 }
 
 export default function App() {
@@ -116,7 +127,7 @@ export default function App() {
     app.setTheme(next)
   }
 
-  const ThemeIcon = app.theme === 'dark' ? Moon : app.theme === 'paper' ? Palette : Sun
+  const ThemeIcon = THEME_ICON[app.theme] ?? Sun
 
   return (
     <div className="app">

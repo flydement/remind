@@ -63,8 +63,8 @@ export default function WorkEditor({
   }, [onClose, onSave, draft])
 
   const preview = useMemo(
-    () => previewNotifyDate(draft.dueAt, draft.notify.advanceDays, draft.notify.time),
-    [draft.dueAt, draft.notify.advanceDays, draft.notify.time]
+    () => previewNotifyDate(draft.dueAt, draft.notify.advanceDays, draft.notify.time, draft.notify.frequency),
+    [draft.dueAt, draft.notify.advanceDays, draft.notify.time, draft.notify.frequency]
   )
 
   const handleDateChange = (raw: string): void => {

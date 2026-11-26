@@ -5,6 +5,7 @@ import {
   Columns3,
   FastForward,
   FileSpreadsheet,
+  HelpCircle,
   LayoutList,
   Play,
   RotateCcw,
@@ -15,7 +16,7 @@ import {
   X
 } from 'lucide-react'
 import type { WorkItem, WorkStatus } from '@shared/types'
-import { describeDraft, parseWorkText } from '@shared/parser'
+import { describeDraft, parseWorkText, WORK_SYNTAX_GUIDE } from '@shared/parser'
 import { formatDateCn, isPastDue, isSameDay, relativeDaysLabel } from '@shared/time'
 import PageHead from '../components/PageHead'
 import { newWorkItem, type useAppState } from '../state'
@@ -36,6 +37,7 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
   const [text, setText] = useState('')
   const [editing, setEditing] = useState<WorkItem | null>(null)
   const [excelOpen, setExcelOpen] = useState(false)
+  const [showSyntax, setShowSyntax] = useState(false)
   const draft = useMemo(() => parseWorkText(text, app.now), [text, app.now])
 
   const allTags = useMemo(() => {
@@ -111,9 +113,11 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
         title: draft.title,
         dueAt: draft.dueAt,
         priority: draft.priority,
+        assignee: draft.assignee,
         tags: draft.tags,
         notify: draft.notify,
         repeat: draft.repeat,
+        notes: draft.notes,
         sourceText: draft.sourceText
       })
     )
@@ -130,9 +134,11 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
         title: draft.title,
         dueAt: draft.dueAt,
         priority: draft.priority,
+        assignee: draft.assignee,
         tags: draft.tags,
         notify: draft.notify,
         repeat: draft.repeat,
+        notes: draft.notes,
         sourceText: draft.sourceText
       })
     )
@@ -248,7 +254,7 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
             <input
               data-quick-composer="true"
               value={text}
-              placeholder="例如：月报 8月11号 提前5天通知 #财务 重点（回车极速创建，Ctrl+回车详细配置）"
+              placeholder="例如：任务：整理财务月报 截止2026年12月31日 从今天开始每天早上10点提醒我一次 #财务 重点"
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -266,6 +272,14 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
             <SlidersHorizontal size={14} />
             详细配置
           </button>
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => setShowSyntax((v) => !v)}
+          >
+            <HelpCircle size={14} />
+            {showSyntax ? '收起语法' : '语法说明'}
+          </button>
         </div>
         {text.trim() ? (
           <div className="parsed-preview">
@@ -277,9 +291,19 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
           </div>
         ) : (
           <p className="muted" style={{ margin: '9px 0 0' }}>
-            支持语法：明天 / 3天后 / 周五 / 下周三 15:30 / 每月11号 提前5天 / #标签 / 重点 / 一般
+            支持长句与简写：任务：标题 · 截止12月31日 / 明天 / 下周三 · 从今天开始 / 提前5天 · 每天早上10点提醒我一次 · #标签 · 重点 / 一般 · @责任人
           </p>
         )}
+        {showSyntax ? (
+          <div className="syntax-guide">
+            {WORK_SYNTAX_GUIDE.map((g) => (
+              <div key={g.category} className="syntax-item">
+                <b>{g.category}</b>
+                <span>{g.patterns}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div className="work-toolbar">

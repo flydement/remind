@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AppState, NotifyEvent, ThemeMode, WorkItem, WorkStatus } from '@shared/types'
-import { EMPTY_STATE, normalizePriority } from '@shared/types'
+import { EMPTY_STATE, normalizePriority, normalizeTheme, THEME_OPTIONS } from '@shared/types'
 import { seedHealth, seedQuotes } from '@shared/defaults'
 import { createId } from '@shared/ids'
 import { isPastDue, isSameDay, nowIso, toLocalDate } from '@shared/time'
@@ -42,11 +42,9 @@ const IDLE_FOCUS: FocusTimerState = {
   remainingSeconds: 25 * 60
 }
 
-const THEME_META_COLOR: Record<ThemeMode, string> = {
-  slate: '#0f172a',
-  paper: '#28221a',
-  dark: '#0b1120'
-}
+const THEME_META_COLOR: Record<ThemeMode, string> = Object.fromEntries(
+  THEME_OPTIONS.map((t) => [t.id, t.metaColor])
+) as Record<ThemeMode, string>
 
 function fallbackState(): AppState {
   return { ...EMPTY_STATE, quotes: seedQuotes(), health: seedHealth() }
@@ -107,7 +105,7 @@ export function useAppState() {
   const stateRef = useRef(state)
   stateRef.current = state
 
-  const theme: ThemeMode = state.settings.theme ?? 'slate'
+  const theme: ThemeMode = normalizeTheme(state.settings.theme)
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -566,7 +564,7 @@ export function useAppState() {
         subtasks: item.subtasks ?? []
       }
       const dueHint = normalized.notify.enabled
-        ? `将于 ${previewNotifyDate(normalized.dueAt, normalized.notify.advanceDays, normalized.notify.time)} 准时提醒。`
+        ? `提醒安排：${previewNotifyDate(normalized.dueAt, normalized.notify.advanceDays, normalized.notify.time, normalized.notify.frequency)}。`
         : '已关闭该事项的定时提醒。'
       const ev: NotifyEvent = {
         id: createId('nt'),

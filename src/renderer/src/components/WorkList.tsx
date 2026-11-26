@@ -91,7 +91,7 @@ export default function WorkList({
                 <span>截止 {formatDateCn(w.dueAt)}</span>
                 {w.notify.snoozedUntil ? <span>· 延后至 {formatDateTimeCn(w.notify.snoozedUntil)}</span> : null}
                 {w.notify.enabled && !w.notify.snoozedUntil && !isDone ? (
-                  <span>· 提醒 {previewNotifyDate(w.dueAt, w.notify.advanceDays, w.notify.time)}</span>
+                  <span>· 提醒 {previewNotifyDate(w.dueAt, w.notify.advanceDays, w.notify.time, w.notify.frequency)}</span>
                 ) : null}
                 {w.focusMinutes ? <span>· 已专注 {w.focusMinutes}m</span> : null}
                 {subtasks.length > 0 ? (

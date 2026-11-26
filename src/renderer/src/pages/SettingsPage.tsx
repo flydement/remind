@@ -1,30 +1,9 @@
 import { useRef, useState } from 'react'
 import { BellRing, Database, Download, Keyboard, Palette, SlidersHorizontal, Upload } from 'lucide-react'
-import type { ThemeMode } from '@shared/types'
+import { THEME_OPTIONS } from '@shared/types'
 import { toLocalDate } from '@shared/time'
 import PageHead from '../components/PageHead'
 import type { useAppState } from '../state'
-
-const THEMES: { id: ThemeMode; name: string; desc: string; colors: [string, string, string] }[] = [
-  {
-    id: 'slate',
-    name: '严谨商务（默认）',
-    desc: '冷灰蓝高对比度界面，层级清晰、利落专业',
-    colors: ['#f4f6f9', '#0f172a', '#2563eb']
-  },
-  {
-    id: 'paper',
-    name: '温润纸感',
-    desc: '柔和暖米色调与衬线标题，适合长时间阅读',
-    colors: ['#f6f0e6', '#28221a', '#c85d3f']
-  },
-  {
-    id: 'dark',
-    name: '深色专注',
-    desc: '低眩光深蓝暗色模式，适合夜间与沉浸开发',
-    colors: ['#0b1120', '#131c2e', '#3b82f6']
-  }
-]
 
 export default function SettingsPage({ app }: { app: ReturnType<typeof useAppState> }) {
   const s = app.state.settings
@@ -61,19 +40,22 @@ export default function SettingsPage({ app }: { app: ReturnType<typeof useAppSta
       />
 
       <div className="card" style={{ marginBottom: 18 }}>
-        <h3><Palette size={15} color="var(--primary)" /> 界面外观主题</h3>
+        <h3><Palette size={15} color="var(--primary)" /> 界面外观主题（共 {THEME_OPTIONS.length} 套风格）</h3>
         <div className="theme-cards">
-          {THEMES.map((t) => (
+          {THEME_OPTIONS.map((t) => (
             <button
               key={t.id}
               type="button"
               className={`theme-card ${app.theme === t.id ? 'active' : ''}`}
               onClick={() => app.setTheme(t.id)}
             >
-              <div className="theme-swatch">
-                <i style={{ background: t.colors[0] }} />
-                <i style={{ background: t.colors[1] }} />
-                <i style={{ background: t.colors[2] }} />
+              <div className="theme-card-head">
+                <div className="theme-swatch">
+                  <i style={{ background: t.colors[0] }} />
+                  <i style={{ background: t.colors[1] }} />
+                  <i style={{ background: t.colors[2] }} />
+                </div>
+                <span className={`tag ${app.theme === t.id ? 'primary' : ''}`}>{t.badge}</span>
               </div>
               <div style={{ fontWeight: 600, fontSize: 13.5 }}>{t.name}</div>
               <div className="muted" style={{ marginTop: 4, lineHeight: 1.45 }}>{t.desc}</div>

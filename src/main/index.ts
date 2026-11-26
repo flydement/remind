@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, Notification, Tray, Menu, nativeImage, shell, screen } from 'electron'
 import { join, dirname } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { EMPTY_STATE, normalizePriority, type AppState, type NotifyEvent } from '../shared/types'
+import { EMPTY_STATE, normalizePriority, THEME_OPTIONS, type AppState, type NotifyEvent } from '../shared/types'
 import { seedHealth, seedQuotes } from '../shared/defaults'
 import { completeWorkItem, rolloverRepeats, snoozeWorkItem, tickScheduler } from '../shared/scheduler'
 
@@ -125,7 +125,7 @@ function createWindow(): void {
     minHeight: 640,
     title: '小猫工作助手',
     icon: iconImage(),
-    backgroundColor: state.settings.theme === 'dark' ? '#0B1120' : state.settings.theme === 'paper' ? '#F6F0E6' : '#F4F6F9',
+    backgroundColor: THEME_OPTIONS.find((t) => t.id === state.settings.theme)?.windowBg ?? '#F4F6F9',
     show: false,
     autoHideMenuBar: true,
     webPreferences: {

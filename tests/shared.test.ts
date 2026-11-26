@@ -12,7 +12,7 @@ import {
 import { generateReport, upsertReport } from '../src/shared/reports'
 import { buildExcelFilename, collectMonthlyExcelPlan, generateWorkExcelBytes } from '../src/shared/excel'
 import { addMonthsClamped, inWorkHours, nextWorkday, relativeDaysLabel, toLocalDate } from '../src/shared/time'
-import { EMPTY_STATE, type AppState, type WorkItem } from '../src/shared/types'
+import { EMPTY_STATE, normalizeTheme, THEME_OPTIONS, type AppState, type WorkItem } from '../src/shared/types'
 import { seedHealth, seedQuotes } from '../src/shared/defaults'
 
 function makeState(partial: Partial<AppState> = {}): AppState {
@@ -94,6 +94,80 @@ test('parser: extracts hashtags, priority, bare weekdays, and N-days-later offse
   assert.equal(d3.title, '填写工时')
   assert.equal(d3.repeat, 'weekdays')
   assert.equal(d3.notify.time, '17:30')
+})
+
+test('parser: handles continuous Chinese sentences, deadline vs start-from dates, periods, and protects nouns', () => {
+  const now = new Date(2026, 10, 25, 17, 30, 0) // 2026-11-25
+
+  // User reported sentence (continuous without spaces + start-from today + deadline + daily morning reminder)
+  const u1 = parseWorkText('任务:整理财务月报截止日期2026年12月31日从今天开始每天早上10点提醒我一次', now)
+  assert.equal(u1.title, '整理财务月报')
+  assert.equal(toLocalDate(new Date(u1.dueAt)), '2026-12-31')
+  assert.equal(u1.notify.advanceDays, 36) // 2026-11-25 -> 2026-12-31
+  assert.equal(u1.notify.time, '10:00')
+  assert.equal(u1.notify.frequency, 'daily')
+  assert.equal(u1.repeat, 'none')
+
+  // Also tolerates OCR/IME stray bracket in "早」10点"
+  const u1Typo = parseWorkText('任务:整理财务月报截止日期2026年12月31日从今天开始每天早」10点提醒我一次', now)
+  assert.equal(u1Typo.title, '整理财务月报')
+  assert.equal(toLocalDate(new Date(u1Typo.dueAt)), '2026-12-31')
+  assert.equal(u1Typo.notify.advanceDays, 36)
+  assert.equal(u1Typo.notify.time, '10:00')
+  assert.equal(u1Typo.notify.frequency, 'daily')
+
+  // Structured clauses with assignee, priority, weekdays window, and notes
+  const u2 = parseWorkText(
+    '待办：提交Q4预算表，截止至2026-12-20，自12月10日起每个工作日早上9点半通知我一次 #财务 【重点】 @李四 备注：需附明细表',
+    now
+  )
+  assert.equal(u2.title, '提交Q4预算表')
+  assert.equal(toLocalDate(new Date(u2.dueAt)), '2026-12-20')
+  assert.equal(u2.notify.advanceDays, 10)
+  assert.equal(u2.notify.time, '09:30')
+  assert.equal(u2.notify.frequency, 'weekdays')
+  assert.equal(u2.priority, 'high')
+  assert.equal(u2.assignee, '李四')
+  assert.deepEqual(u2.tags, ['财务'])
+  assert.equal(u2.notes, '需附明细表')
+
+  // Range syntax "从A到B" + Chinese numerals
+  const u3 = parseWorkText('准备年审材料 从12月1日到12月15日 每天上午九点半提醒我', now)
+  assert.equal(u3.title, '准备年审材料')
+  assert.equal(toLocalDate(new Date(u3.dueAt)), '2026-12-15')
+  assert.equal(u3.notify.advanceDays, 14)
+  assert.equal(u3.notify.time, '09:30')
+  assert.equal(u3.notify.frequency, 'daily')
+
+  // Standalone daily routine without deadline promotes to repeat='daily'
+  const u4 = parseWorkText('每天早上9点提交晨会纪要', now)
+  assert.equal(u4.title, '提交晨会纪要')
+  assert.equal(toLocalDate(new Date(u4.dueAt)), '2026-11-25')
+  assert.equal(u4.repeat, 'daily')
+  assert.equal(u4.notify.time, '09:00')
+
+  // Protects legitimate nouns ("放假通知", "消息提醒", "三点建议", historical date in title, version dots)
+  const u5 = parseWorkText('复盘11月1日线上故障 11月30日前完成', now)
+  assert.equal(u5.title, '复盘11月1日线上故障')
+  assert.equal(toLocalDate(new Date(u5.dueAt)), '2026-11-30')
+
+  const u6 = parseWorkText('明天发送放假通知', now)
+  assert.equal(u6.title, '发送放假通知')
+
+  const u7 = parseWorkText('优化 v2.0 消息提醒模块 明早9点提醒', now)
+  assert.equal(u7.title, '优化 v2.0 消息提醒模块')
+  assert.equal(toLocalDate(new Date(u7.dueAt)), '2026-11-26')
+  assert.equal(u7.notify.time, '09:00')
+
+  const u8 = parseWorkText('整理三点建议 提前一周提醒 12月10日截止', now)
+  assert.equal(u8.title, '整理三点建议')
+  assert.equal(toLocalDate(new Date(u8.dueAt)), '2026-12-10')
+  assert.equal(u8.notify.advanceDays, 7)
+
+  const u9 = parseWorkText('年底前完成固定资产盘点 不提醒', now)
+  assert.equal(u9.title, '完成固定资产盘点')
+  assert.equal(toLocalDate(new Date(u9.dueAt)), '2026-12-31')
+  assert.equal(u9.notify.enabled, false)
 })
 
 test('time: addMonthsClamped, nextWorkday, relativeDaysLabel, and cross-midnight inWorkHours', () => {
@@ -316,4 +390,14 @@ test('excel: groups completed & planned tasks into 重点/一般 and generates v
 
   const filename = buildExcelFilename({ monthDate: ref, department: '研发部' })
   assert.equal(filename, '研发部-2026年11月工作完成情况及12月工作计划.xlsx')
+})
+
+test('themes: exposes 7 curated themes including eyecare, minimal, cute, and cartoon with safe fallback', () => {
+  const ids = THEME_OPTIONS.map((t) => t.id)
+  assert.deepEqual(ids, ['slate', 'eyecare', 'minimal', 'cute', 'cartoon', 'paper', 'dark'])
+  for (const id of ids) {
+    assert.equal(normalizeTheme(id), id)
+  }
+  assert.equal(normalizeTheme('unknown'), 'slate')
+  assert.equal(normalizeTheme(undefined), 'slate')
 })

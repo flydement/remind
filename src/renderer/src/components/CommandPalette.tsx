@@ -17,7 +17,7 @@ import {
   Sun,
   Timer
 } from 'lucide-react'
-import type { PageId, WorkItem } from '@shared/types'
+import { THEME_OPTIONS, type PageId, type WorkItem } from '@shared/types'
 import { upsertReport } from '@shared/reports'
 import { formatDateCn } from '@shared/time'
 import type { useAppState } from '../state'
@@ -135,30 +135,14 @@ export default function CommandPalette({
             }
           ]
         : []),
-      {
-        id: 'theme-slate',
+      ...THEME_OPTIONS.map((t) => ({
+        id: `theme-${t.id}`,
         group: '外观主题',
-        title: '切换主题：严谨商务（冷灰蓝）',
-        hint: app.theme === 'slate' ? '当前使用' : '结构清晰',
-        icon: Sun,
-        run: () => app.setTheme('slate')
-      },
-      {
-        id: 'theme-paper',
-        group: '外观主题',
-        title: '切换主题：温润纸感（暖米色）',
-        hint: app.theme === 'paper' ? '当前使用' : '柔和阅读',
-        icon: Palette,
-        run: () => app.setTheme('paper')
-      },
-      {
-        id: 'theme-dark',
-        group: '外观主题',
-        title: '切换主题：深色专注（夜间护眼）',
-        hint: app.theme === 'dark' ? '当前使用' : '暗色低眩光',
-        icon: Moon,
-        run: () => app.setTheme('dark')
-      },
+        title: `切换主题：${t.name}（${t.badge}）`,
+        hint: app.theme === t.id ? '当前使用' : t.hint,
+        icon: t.id === 'dark' ? Moon : t.id === 'slate' ? Sun : Palette,
+        run: () => app.setTheme(t.id)
+      })),
       {
         id: 'nav-today',
         group: '页面跳转',
