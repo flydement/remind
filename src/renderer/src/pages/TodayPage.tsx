@@ -8,7 +8,8 @@ import {
   FastForward,
   RefreshCw,
   Timer,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react'
 import type { PageId, WorkItem } from '@shared/types'
 import { formatDateTimeCn, isSameDay } from '@shared/time'
@@ -33,6 +34,13 @@ export default function TodayPage({
   const [showAnswer, setShowAnswer] = useState(false)
   const [scheduleTab, setScheduleTab] = useState<'priority' | 'today' | 'doing'>('priority')
   const [inboxFilter, setInboxFilter] = useState<'all' | 'work' | 'health' | 'quote'>('all')
+  const [notifyBannerHidden, setNotifyBannerHidden] = useState(() => {
+    try {
+      return sessionStorage.getItem('rian-hide-notify-banner') === '1'
+    } catch {
+      return false
+    }
+  })
 
   const quote =
     app.state.quotes.find((q) => q.id === app.state.quoteSettings.lastQuoteId) ??
@@ -83,15 +91,32 @@ export default function TodayPage({
         }
       />
 
-      {!window.rian && app.notifyPerm !== 'granted' ? (
+      {!window.rian && app.notifyPerm !== 'granted' && !notifyBannerHidden ? (
         <div className="card banner-warn">
           <div>
             <b>尚未授权浏览器系统通知</b>
             <div className="muted">开启后，即使切换到其他窗口或标签页也能准时接收桌面提醒。</div>
           </div>
-          <button className="btn small" onClick={() => void app.enableNotifications()}>
-            开启系统通知
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button className="btn small" onClick={() => void app.enableNotifications()}>
+              开启系统通知
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              title="本次会话暂不提示"
+              onClick={() => {
+                setNotifyBannerHidden(true)
+                try {
+                  sessionStorage.setItem('rian-hide-notify-banner', '1')
+                } catch {
+                  // ignore storage errors
+                }
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -219,11 +244,17 @@ export default function TodayPage({
                   ? '暂无标记为「进行中」的事项，点击事项右侧「推进」即可开始。'
                   : '当前暂无待办事项。在上方输入一句话即可快速排期。'
             }
+            emptyAction={
+              app.state.workItems.length === 0
+                ? { label: '导入 3 条体验示例', onClick: app.loadDemoWork }
+                : undefined
+            }
             onToggle={(w) => app.toggleWork(w)}
             onOpen={setEditing}
             onStartFocus={(w) => app.startFocus(undefined, w.id)}
             onTogglePin={(id) => app.togglePinWork(id)}
             onToggleSubtask={(wId, sId) => app.toggleSubtask(wId, sId)}
+            onAddSubtask={(wId, title) => app.addSubtask(wId, title)}
             onCycleDoing={(w) => app.setWorkStatus(w.id, w.status === 'doing' ? 'todo' : 'doing')}
             onPostponeOneDay={(w) => app.postponeWorkItem(w.id, 1)}
           />

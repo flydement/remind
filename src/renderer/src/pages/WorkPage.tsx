@@ -286,6 +286,7 @@ export default function WorkPage({
     onStartFocus: (w: WorkItem) => app.startFocus(undefined, w.id),
     onTogglePin: (id: string) => app.togglePinWork(id),
     onToggleSubtask: (wId: string, sId: string) => app.toggleSubtask(wId, sId),
+    onAddSubtask: (wId: string, title: string) => app.addSubtask(wId, title),
     onCycleDoing: (w: WorkItem) => app.setWorkStatus(w.id, w.status === 'doing' ? 'todo' : 'doing'),
     onPostponeOneDay: (w: WorkItem) => app.postponeWorkItem(w.id, 1)
   }
@@ -449,6 +450,11 @@ export default function WorkPage({
                 query.trim() || activeTag
                   ? '没有匹配筛选条件的工作项。'
                   : '当前列表为空，按 N 在上方输入一句话即可快速创建。'
+              }
+              emptyAction={
+                app.state.workItems.length === 0 && !query.trim() && !activeTag
+                  ? { label: '导入 3 条体验示例', onClick: app.loadDemoWork }
+                  : undefined
               }
               {...workListCommonProps}
             />

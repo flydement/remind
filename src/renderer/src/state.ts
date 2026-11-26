@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AppState, NotifyEvent, ThemeMode, WorkItem, WorkStatus } from '@shared/types'
 import { EMPTY_STATE, normalizePriority, normalizeTheme, THEME_OPTIONS } from '@shared/types'
-import { seedHealth, seedQuotes } from '@shared/defaults'
+import { seedDemoWork, seedHealth, seedQuotes } from '@shared/defaults'
 import { createId } from '@shared/ids'
 import { addDays, isPastDue, isSameDay, nowIso, toLocalDate } from '@shared/time'
 import {
@@ -98,6 +98,8 @@ export function useAppState() {
   const [flash, setFlash] = useState<FlashMessage | null>(null)
   const [reminderQueue, setReminderQueue] = useState<NotifyEvent[]>([])
   const [focusTimer, setFocusTimer] = useState<FocusTimerState>(IDLE_FOCUS)
+  const focusTimerRef = useRef(focusTimer)
+  focusTimerRef.current = focusTimer
   const focusEndAtRef = useRef<number | null>(null)
   const [notifyPerm, setNotifyPerm] = useState<NotificationPermission>(
     typeof Notification === 'undefined' ? 'denied' : Notification.permission
@@ -261,9 +263,27 @@ export function useAppState() {
   }, [])
 
   const stopFocus = useCallback(() => {
+    const cur = focusTimerRef.current
+    const endAt = focusEndAtRef.current
     focusEndAtRef.current = null
     setFocusTimer(IDLE_FOCUS)
-  }, [])
+
+    if (!cur.active || cur.mode !== 'focus') return
+    const rem = !cur.paused && endAt ? Math.max(0, Math.round((endAt - Date.now()) / 1000)) : cur.remainingSeconds
+    const elapsedSec = Math.max(0, cur.totalSeconds - rem)
+    const elapsedMins = Math.floor(elapsedSec / 60)
+    if (elapsedMins >= 1) {
+      const updated = recordFocusMinutes(stateRef.current, elapsedMins, cur.workId)
+      void persist(updated)
+      const workTitle = cur.workId ? stateRef.current.workItems.find((w) => w.id === cur.workId)?.title : undefined
+      setFlash({
+        id: createId('fl'),
+        title: workTitle ? `已结束专注 · ${workTitle}` : '已结束本次专注',
+        body: `已为你记录本次专注时长 ${elapsedMins} 分钟。`,
+        source: 'work'
+      })
+    }
+  }, [persist])
 
   useEffect(() => {
     if (!focusTimer.active || focusTimer.paused) return
@@ -361,6 +381,18 @@ export function useAppState() {
           }
         }
         if (typeof Notification !== 'undefined') setNotifyPerm(Notification.permission)
+        const onStorage = (e: StorageEvent): void => {
+          if (e.key !== 'rian-state' || !e.newValue) return
+          try {
+            const synced = hydrate(JSON.parse(e.newValue) as AppState)
+            stateRef.current = synced
+            setState(synced)
+          } catch {
+            // ignore corrupted cross-tab payload
+          }
+        }
+        window.addEventListener('storage', onStorage)
+        unsub = () => window.removeEventListener('storage', onStorage)
       }
       setReady(true)
     }
@@ -449,7 +481,24 @@ export function useAppState() {
   const setWorkStatus = useCallback(
     (workId: string, status: WorkStatus) => {
       if (status === 'done') {
+        const target = stateRef.current.workItems.find((w) => w.id === workId)
+        if (!target || target.status === 'done') return
+        const prevItems = stateRef.current.workItems
         patch((s) => completeWorkItem(s, workId))
+        setFlash({
+          id: createId('fl'),
+          title: `已完成「${target.title}」`,
+          body:
+            target.repeat !== 'none'
+              ? '已自动排期下一周期循环事项，误点可撤销。'
+              : '已归档至已完成列表，误点可随时撤销。',
+          source: 'work',
+          actionLabel: '撤销',
+          onAction: () => {
+            patch((s) => ({ ...s, workItems: prevItems }))
+            setFlash(null)
+          }
+        })
       } else {
         patch((s) => ({
           ...s,
@@ -500,6 +549,26 @@ export function useAppState() {
     [patch]
   )
 
+  const addSubtask = useCallback(
+    (workId: string, title: string) => {
+      const clean = title.trim()
+      if (!clean) return
+      patch((s) => ({
+        ...s,
+        workItems: s.workItems.map((w) =>
+          w.id === workId
+            ? {
+                ...w,
+                updatedAt: nowIso(),
+                subtasks: [...(w.subtasks ?? []), { id: createId('st'), title: clean, done: false }]
+              }
+            : w
+        )
+      }))
+    },
+    [patch]
+  )
+
   const deleteWork = useCallback(
     (workId: string) => {
       const target = stateRef.current.workItems.find((x) => x.id === workId)
@@ -541,6 +610,7 @@ export function useAppState() {
 
   const postponeOverdue = useCallback(
     (days = 1) => {
+      const prevItems = stateRef.current.workItems
       const { state: next, count } = batchPostponeOverdue(stateRef.current, days)
       if (!count) return
       void persist(next)
@@ -548,11 +618,48 @@ export function useAppState() {
         id: createId('fl'),
         title: `已顺延 ${count} 项逾期工作`,
         body: days === 0 ? '截止时间已统一调整至今天 18:00。' : `截止时间已统一顺延至 ${days} 天后。`,
-        source: 'work'
+        source: 'work',
+        actionLabel: '撤销',
+        onAction: () => {
+          patch((s) => ({ ...s, workItems: prevItems }))
+          setFlash(null)
+        }
       })
     },
-    [persist]
+    [persist, patch]
   )
+
+  const deleteReport = useCallback(
+    (reportId: string) => {
+      const target = stateRef.current.reports.find((r) => r.id === reportId)
+      if (!target) return
+      const prevReports = stateRef.current.reports
+      patch((s) => ({ ...s, reports: s.reports.filter((r) => r.id !== reportId) }))
+      setFlash({
+        id: createId('fl'),
+        title: `已移除归档「${target.title}」`,
+        body: '仍可随时重新汇总该期报告，或点击撤销恢复。',
+        source: 'info',
+        actionLabel: '撤销',
+        onAction: () => {
+          patch((s) => ({ ...s, reports: prevReports }))
+          setFlash(null)
+        }
+      })
+    },
+    [patch]
+  )
+
+  const loadDemoWork = useCallback(() => {
+    const demo = seedDemoWork(new Date())
+    patch((s) => ({ ...s, workItems: [...demo, ...s.workItems] }))
+    setFlash({
+      id: createId('fl'),
+      title: `已导入 ${demo.length} 条体验示例`,
+      body: '可直接体验子步骤勾选、看板拖拽、周月报汇总与 Excel 台账导出。',
+      source: 'work'
+    })
+  }, [patch])
 
   const postponeWorkItem = useCallback(
     (workId: string, days = 1) => {
@@ -741,10 +848,13 @@ export function useAppState() {
     toggleWork,
     togglePinWork,
     toggleSubtask,
+    addSubtask,
     deleteWork,
     clearCompletedWork,
     postponeOverdue,
     postponeWorkItem,
+    deleteReport,
+    loadDemoWork,
     shuffleQuote,
     saveWork,
     markInboxRead,

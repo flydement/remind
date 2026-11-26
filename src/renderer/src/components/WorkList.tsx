@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CalendarPlus, ChevronDown, ChevronRight, Pin, Play, Trash2 } from 'lucide-react'
+import { CalendarPlus, ChevronDown, ChevronRight, Pin, Play, Plus, Sparkles, Trash2 } from 'lucide-react'
 import type { RepeatRule, WorkItem } from '@shared/types'
 import { formatDateCn, formatDateTimeCn, isPastDue, relativeDaysLabel } from '@shared/time'
 import { previewNotifyDate } from '@shared/parser'
@@ -14,6 +14,7 @@ const REPEAT_TAG: Record<Exclude<RepeatRule, 'none'>, string> = {
 export default function WorkList({
   items,
   empty,
+  emptyAction,
   now = new Date(),
   onToggle,
   onOpen,
@@ -21,11 +22,13 @@ export default function WorkList({
   onStartFocus,
   onTogglePin,
   onToggleSubtask,
+  onAddSubtask,
   onCycleDoing,
   onPostponeOneDay
 }: {
   items: WorkItem[]
   empty: string
+  emptyAction?: { label: string; onClick: () => void }
   now?: Date
   onToggle: (w: WorkItem) => void
   onOpen: (w: WorkItem) => void
@@ -33,15 +36,41 @@ export default function WorkList({
   onStartFocus?: (w: WorkItem) => void
   onTogglePin?: (workId: string) => void
   onToggleSubtask?: (workId: string, subtaskId: string) => void
+  onAddSubtask?: (workId: string, title: string) => void
   onCycleDoing?: (w: WorkItem) => void
   onPostponeOneDay?: (w: WorkItem) => void
 }) {
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({})
+  const [subInputs, setSubInputs] = useState<Record<string, string>>({})
 
-  if (!items.length) return <div className="empty">{empty}</div>
+  if (!items.length) {
+    return (
+      <div className="empty">
+        <div>{empty}</div>
+        {emptyAction ? (
+          <button
+            type="button"
+            className="btn ghost small"
+            style={{ marginTop: 12 }}
+            onClick={emptyAction.onClick}
+          >
+            <Sparkles size={13} color="var(--primary)" />
+            {emptyAction.label}
+          </button>
+        ) : null}
+      </div>
+    )
+  }
 
   const toggleExpand = (id: string): void => {
     setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  const submitSubtask = (workId: string): void => {
+    const val = (subInputs[workId] ?? '').trim()
+    if (!val || !onAddSubtask) return
+    onAddSubtask(workId, val)
+    setSubInputs((prev) => ({ ...prev, [workId]: '' }))
   }
 
   return (
@@ -107,11 +136,7 @@ export default function WorkList({
                 ) : null}
                 {w.focusMinutes ? <span>· 已专注 {w.focusMinutes}m</span> : null}
                 {subtasks.length > 0 ? (
-                  <button
-                    type="button"
-                    className="subtask-pill"
-                    onClick={() => toggleExpand(w.id)}
-                  >
+                  <button type="button" className="subtask-pill" onClick={() => toggleExpand(w.id)}>
                     {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
                     <span>
                       步骤 {doneSub}/{subtasks.length}
@@ -147,6 +172,22 @@ export default function WorkList({
                       </span>
                     </div>
                   ))}
+                  {!isDone && onAddSubtask ? (
+                    <div className="subtask-inline-add">
+                      <Plus size={12} color="var(--ink-faint)" />
+                      <input
+                        value={subInputs[w.id] ?? ''}
+                        placeholder="添加新步骤，回车保存..."
+                        onChange={(e) => setSubInputs((prev) => ({ ...prev, [w.id]: e.target.value }))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            submitSubtask(w.id)
+                          }
+                        }}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -177,7 +218,7 @@ export default function WorkList({
                 <button
                   type="button"
                   className="icon-btn hover-reveal"
-                  title="对此事项开启 25 分钟专注"
+                  title="开启番茄专注"
                   onClick={() => onStartFocus(w)}
                 >
                   <Play size={14} />

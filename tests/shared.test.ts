@@ -13,7 +13,7 @@ import { generateReport, upsertReport } from '../src/shared/reports'
 import { buildExcelFilename, collectMonthlyExcelPlan, generateWorkExcelBytes } from '../src/shared/excel'
 import { addMonthsClamped, inWorkHours, nextWorkday, relativeDaysLabel, toLocalDate } from '../src/shared/time'
 import { EMPTY_STATE, normalizeTheme, THEME_OPTIONS, type AppState, type WorkItem } from '../src/shared/types'
-import { seedHealth, seedQuotes } from '../src/shared/defaults'
+import { seedDemoWork, seedHealth, seedQuotes } from '../src/shared/defaults'
 
 function makeState(partial: Partial<AppState> = {}): AppState {
   return {
@@ -400,4 +400,14 @@ test('themes: exposes 7 curated themes including eyecare, minimal, cute, and car
   }
   assert.equal(normalizeTheme('unknown'), 'slate')
   assert.equal(normalizeTheme(undefined), 'slate')
+})
+
+test('defaults: seedDemoWork produces 3 valid onboarding items spanning today and upcoming horizons', () => {
+  const ref = new Date(2026, 10, 25, 10, 0, 0)
+  const demo = seedDemoWork(ref)
+  assert.equal(demo.length, 3)
+  assert.equal(demo[0].priority, 'high')
+  assert.ok((demo[0].subtasks?.length ?? 0) >= 3)
+  assert.equal(toLocalDate(new Date(demo[1].dueAt)), '2026-11-25')
+  assert.equal(toLocalDate(new Date(demo[2].dueAt)), '2026-12-02')
 })

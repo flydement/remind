@@ -12,8 +12,10 @@ import {
   FilePlus2,
   FileSpreadsheet,
   Percent,
+  Printer,
   RefreshCw,
-  Save
+  Save,
+  Trash2
 } from 'lucide-react'
 import type { ReportKind, ReportStyle } from '@shared/types'
 import { generateReport, periodOf, upsertReport } from '@shared/reports'
@@ -325,6 +327,19 @@ export default function ReportsPage({ app }: { app: ReturnType<typeof useAppStat
             </p>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {archived ? (
+              <button
+                className="icon-btn"
+                title="移除该份归档报告（支持撤销）"
+                onClick={() => {
+                  app.deleteReport(archived.id)
+                  setSelectedId(null)
+                  setEditingBody(null)
+                }}
+              >
+                <Trash2 size={14} />
+              </button>
+            ) : null}
             {editingBody === null ? (
               <button className="btn ghost small" onClick={() => setEditingBody(current.body)}>
                 <Edit3 size={13} />
@@ -341,6 +356,10 @@ export default function ReportsPage({ app }: { app: ReturnType<typeof useAppStat
                 </button>
               </>
             )}
+            <button className="btn ghost small" onClick={() => window.print()} title="打印或另存为 PDF">
+              <Printer size={13} />
+              打印 / PDF
+            </button>
             <button className="btn ghost small" onClick={handleExportMd}>
               <Download size={13} />
               导出 .md

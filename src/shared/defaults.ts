@@ -77,26 +77,76 @@ export function seedHealth(): HealthReminder[] {
 }
 
 export function seedDemoWork(now = new Date()): WorkItem[] {
-  const due = addDays(now, 5)
-  due.setHours(18, 0, 0, 0)
+  const todayDue = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 18, 0, 0, 0)
+  const in3Days = addDays(todayDue, 3)
+  const in7Days = addDays(todayDue, 7)
+  const at = nowIso()
+
   return [
     {
       id: createId('wk'),
-      title: '月报',
-      notes: '示例：一句话「月报 本月11号 提前5天通知」就会生成类似工作项。',
-      dueAt: due.toISOString(),
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-      status: 'todo',
+      title: '整理月度工作复盘与下月计划',
+      notes: '完成后可直接去「周报月报」或右上角一键导出标准 Excel 台账。',
+      dueAt: in3Days.toISOString(),
+      createdAt: at,
+      updatedAt: at,
+      status: 'doing',
+      priority: 'high',
+      pinned: true,
+      subtasks: [
+        { id: createId('st'), title: '汇总本月重点项目交付结果', done: true },
+        { id: createId('st'), title: '梳理遗留风险与下月排期', done: false },
+        { id: createId('st'), title: '导出 Excel 台账并同步团队', done: false }
+      ],
       notify: {
         enabled: true,
-        advanceDays: 5,
-        time: '09:00',
+        advanceDays: 3,
+        time: '10:00',
+        frequency: 'daily'
+      },
+      repeat: 'monthly',
+      sourceText: '任务：整理月度工作复盘与下月计划 3天后 从今天开始每天早上10点提醒 #汇报 重点',
+      tags: ['汇报', '示例']
+    },
+    {
+      id: createId('wk'),
+      title: '核对本周需求评审结论',
+      notes: '确认排期边界与接口联调时间节点。',
+      dueAt: todayDue.toISOString(),
+      createdAt: at,
+      updatedAt: at,
+      status: 'todo',
+      priority: 'normal',
+      subtasks: [],
+      notify: {
+        enabled: true,
+        advanceDays: 0,
+        time: '15:30',
         frequency: 'once'
       },
       repeat: 'none',
-      sourceText: '月报 提前5天通知',
-      tags: ['示例']
+      sourceText: '今天 15:30 核对本周需求评审结论 #研发',
+      tags: ['研发', '示例']
+    },
+    {
+      id: createId('wk'),
+      title: '归档季度费用报销与发票凭证',
+      notes: '纸质发票需按日期分类粘贴，电子发票统一汇总。',
+      dueAt: in7Days.toISOString(),
+      createdAt: at,
+      updatedAt: at,
+      status: 'todo',
+      priority: 'normal',
+      subtasks: [],
+      notify: {
+        enabled: true,
+        advanceDays: 2,
+        time: '09:30',
+        frequency: 'once'
+      },
+      repeat: 'none',
+      sourceText: '7天后 归档季度费用报销与发票凭证 提前2天通知 #财务',
+      tags: ['财务', '示例']
     }
   ]
 }
