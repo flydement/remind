@@ -123,6 +123,12 @@ export default function WorkList({
                 ) : null}
               </div>
 
+              {w.notes.trim() ? (
+                <div className="work-note-line" title={w.notes} onClick={() => onOpen(w)}>
+                  {w.notes.trim()}
+                </div>
+              ) : null}
+
               {expanded && subtasks.length > 0 ? (
                 <div className="subtask-inline">
                   {subtasks.map((st) => (

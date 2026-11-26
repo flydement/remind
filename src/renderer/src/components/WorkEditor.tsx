@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Pin, Play, Plus, Trash2, X } from 'lucide-react'
+import { Copy, Pin, Play, Plus, Trash2, X } from 'lucide-react'
 import {
   normalizePriority,
   type NotifyFrequency,
@@ -152,11 +152,30 @@ export default function WorkEditor({
   const subPct = subtasks.length > 0 ? Math.round((doneSubCount / subtasks.length) * 100) : 0
   const daysUntilDue = diffDaysFromToday(draft.dueAt, now)
 
+  const handleDuplicate = (): void => {
+    if (!app) return
+    const nowIsoStr = new Date().toISOString()
+    const cloned: WorkItem = {
+      ...draft,
+      id: createId('wk'),
+      title: `${draft.title.trim() || '未命名工作项'}（副本）`,
+      status: 'todo',
+      completedAt: undefined,
+      focusMinutes: 0,
+      createdAt: nowIsoStr,
+      updatedAt: nowIsoStr,
+      subtasks: (draft.subtasks ?? []).map((s) => ({ ...s, id: createId('st'), done: false })),
+      notify: { ...draft.notify, lastFiredAt: undefined, snoozedUntil: undefined }
+    }
+    app.saveWork(cloned)
+    onClose()
+  }
+
   return (
     <div className="overlay" onClick={onClose}>
       <div className="card sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-head">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <h3>工作项配置</h3>
             <button
               type="button"
@@ -166,6 +185,19 @@ export default function WorkEditor({
             >
               <Pin size={14} />
             </button>
+            {app && onDelete ? (
+              <button
+                type="button"
+                className="icon-btn"
+                title="复制为新事项（保留标签、子步骤与提醒设置）"
+                onClick={handleDuplicate}
+              >
+                <Copy size={14} />
+              </button>
+            ) : null}
+            {draft.focusMinutes ? (
+              <span className="tag accent">累计专注 {draft.focusMinutes}m</span>
+            ) : null}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {app && draft.status !== 'done' ? (

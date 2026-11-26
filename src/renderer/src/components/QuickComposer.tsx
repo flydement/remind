@@ -201,6 +201,11 @@ export default function QuickComposer({
                 #{t}
               </span>
             ))}
+            {parsed.notes ? (
+              <span className="tag" title={parsed.notes}>
+                备注：{parsed.notes.length > 18 ? `${parsed.notes.slice(0, 18)}…` : parsed.notes}
+              </span>
+            ) : null}
           </div>
           {parsed.hints.length ? <span className="muted">{parsed.hints.join('；')}</span> : null}
         </div>

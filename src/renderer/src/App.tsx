@@ -26,6 +26,7 @@ import {
 import { THEME_OPTIONS, type PageId, type ThemeMode, type WorkItem } from '@shared/types'
 import { pad2, weekdayCn } from '@shared/time'
 import { useAppState } from './state'
+import { setBaseTitle } from './notify'
 import logoSvg from './assets/logo.svg'
 import CommandPalette from './components/CommandPalette'
 import ExportExcelModal from './components/ExportExcelModal'
@@ -163,6 +164,19 @@ export default function App() {
           ((app.focusTimer.totalSeconds - app.focusTimer.remainingSeconds) / app.focusTimer.totalSeconds) * 100
         )
       : 0
+
+  useEffect(() => {
+    if (app.focusTimer.active) {
+      const clock = `${pad2(focusMin)}:${pad2(focusSec)}`
+      const prefix = app.focusTimer.paused ? '⏸' : app.focusTimer.mode === 'focus' ? '⏱' : '☕'
+      const stateText = app.focusTimer.paused ? '已暂停' : app.focusTimer.mode === 'focus' ? '专注中' : '休息中'
+      setBaseTitle(`${prefix} ${clock} ${stateText} · 小猫工作助手`)
+    } else if (app.stats.unreadInbox > 0) {
+      setBaseTitle(`(${app.stats.unreadInbox}) 小猫工作助手 · 任务与效率中枢`)
+    } else {
+      setBaseTitle('小猫工作助手 · 任务与效率中枢')
+    }
+  }, [app.focusTimer.active, app.focusTimer.paused, app.focusTimer.mode, focusMin, focusSec, app.stats.unreadInbox])
 
   const focusPresets = Array.from(new Set([15, app.defaultFocusMinutes, 45])).sort((a, b) => a - b)
   const ThemeIcon = THEME_ICON[app.theme] ?? Sun

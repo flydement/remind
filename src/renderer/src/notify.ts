@@ -54,10 +54,20 @@ export function playFocusChime(enabled = true): void {
   playTone(880, 0.16, 0.28, 0.07)
 }
 
+let baseTitle = '小猫工作助手 · 任务与效率中枢'
+
+export function setBaseTitle(next: string): void {
+  baseTitle = next || TITLE
+  if (!titleTimer) {
+    document.title = baseTitle
+  }
+}
+
 function flashTitle(text: string): void {
   window.clearInterval(titleTimer)
+  titleTimer = 0
   if (!document.hidden) {
-    document.title = TITLE
+    document.title = baseTitle
     return
   }
   let on = true
@@ -65,10 +75,11 @@ function flashTitle(text: string): void {
   titleTimer = window.setInterval(() => {
     if (!document.hidden) {
       window.clearInterval(titleTimer)
-      document.title = TITLE
+      titleTimer = 0
+      document.title = baseTitle
       return
     }
-    document.title = on ? `【提醒】${text}` : TITLE
+    document.title = on ? `【提醒】${text}` : baseTitle
     on = !on
   }, 900)
 }
@@ -76,7 +87,8 @@ function flashTitle(text: string): void {
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     window.clearInterval(titleTimer)
-    document.title = TITLE
+    titleTimer = 0
+    document.title = baseTitle
   }
 })
 
