@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Download, FileSpreadsheet, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Download, FileSpreadsheet, X } from 'lucide-react'
 import {
   buildExcelFilename,
   collectMonthlyExcelPlan,
   generateWorkExcelBytes
 } from '@shared/excel'
 import { createId } from '@shared/ids'
-import { pad2 } from '@shared/time'
+import { formatDateCn, pad2 } from '@shared/time'
 import type { useAppState } from '../state'
 
 function toMonthInput(d: Date): string {
@@ -37,12 +37,14 @@ export default function ExportExcelModal({
   const [department, setDepartment] = useState(() => app.state.settings.department ?? '部门')
   const [defaultOwner, setDefaultOwner] = useState(() => app.state.settings.owner ?? '')
   const [carryOverOpen, setCarryOverOpen] = useState(true)
+  const [showDetail, setShowDetail] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setMonthStr(toMonthInput(initialDate ?? app.now))
     setDepartment(app.state.settings.department ?? '部门')
     setDefaultOwner(app.state.settings.owner ?? '')
+    setShowDetail(false)
   }, [open, initialDate, app.now, app.state.settings.department, app.state.settings.owner])
 
   useEffect(() => {
@@ -68,6 +70,10 @@ export default function ExportExcelModal({
   )
 
   if (!open) return null
+
+  const totalDone = plan.doneKey.length + plan.doneNormal.length
+  const totalPlan = plan.planKey.length + plan.planNormal.length
+  const totalExported = totalDone + totalPlan
 
   const handleDownload = (): void => {
     const cleanDept = department.trim() || '部门'
@@ -105,8 +111,6 @@ export default function ExportExcelModal({
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
 
-    const totalExported =
-      plan.doneKey.length + plan.doneNormal.length + plan.planKey.length + plan.planNormal.length
     app.setFlash({
       id: createId('fl'),
       title: '已导出 Excel 工作台账',
@@ -135,11 +139,7 @@ export default function ExportExcelModal({
         <div className="form-grid" style={{ marginTop: 14 }}>
           <div className="field">
             <label>总结月份（自动关联下月计划）</label>
-            <input
-              type="month"
-              value={monthStr}
-              onChange={(e) => setMonthStr(e.target.value)}
-            />
+            <input type="month" value={monthStr} onChange={(e) => setMonthStr(e.target.value)} />
           </div>
           <div className="field">
             <label>部门名称（第一列合并单元格）</label>
@@ -171,34 +171,75 @@ export default function ExportExcelModal({
           />
         </div>
 
-        <div
-          style={{
-            marginTop: 14,
-            padding: '12px 14px',
-            borderRadius: 10,
-            background: 'var(--card-subtle)',
-            border: '1px solid var(--line)',
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: 12
-          }}
-        >
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>
-              {plan.curMonth}月工作完成情况
+        <div className="excel-summary-box">
+          <div className="excel-summary-grid">
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{plan.curMonth}月工作完成情况</div>
+              <div className="muted" style={{ marginTop: 4 }}>
+                重点工作 <b>{plan.doneKey.length}</b> 项 · 一般工作 <b>{plan.doneNormal.length}</b> 项
+              </div>
             </div>
-            <div className="muted" style={{ marginTop: 4 }}>
-              重点工作 <b>{plan.doneKey.length}</b> 项 · 一般工作 <b>{plan.doneNormal.length}</b> 项
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{plan.nextMonth}月工作计划</div>
+              <div className="muted" style={{ marginTop: 4 }}>
+                重点工作 <b>{plan.planKey.length}</b> 项 · 一般工作 <b>{plan.planNormal.length}</b> 项
+              </div>
             </div>
           </div>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>
-              {plan.nextMonth}月工作计划
+
+          {totalExported > 0 ? (
+            <button
+              type="button"
+              className="excel-detail-toggle"
+              onClick={() => setShowDetail((v) => !v)}
+            >
+              {showDetail ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              {showDetail ? '收起导出明细' : `预览即将导出的 ${totalExported} 项明细`}
+            </button>
+          ) : null}
+
+          {showDetail && totalExported > 0 ? (
+            <div className="excel-preview-list">
+              {totalDone > 0 ? (
+                <div className="excel-preview-group">
+                  <div className="excel-preview-head">{plan.curMonth}月完成情况（{totalDone}）</div>
+                  {plan.doneKey.map((r) => (
+                    <div key={`dk-${r.id}`} className="excel-preview-row">
+                      <span className="tag danger">重点</span>
+                      <span className="excel-preview-title">{r.title}</span>
+                      <span className="muted">{formatDateCn(r.completedAt ?? r.dueAt)}</span>
+                    </div>
+                  ))}
+                  {plan.doneNormal.map((r) => (
+                    <div key={`dn-${r.id}`} className="excel-preview-row">
+                      <span className="tag">一般</span>
+                      <span className="excel-preview-title">{r.title}</span>
+                      <span className="muted">{formatDateCn(r.completedAt ?? r.dueAt)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {totalPlan > 0 ? (
+                <div className="excel-preview-group">
+                  <div className="excel-preview-head">{plan.nextMonth}月工作计划（{totalPlan}）</div>
+                  {plan.planKey.map((r) => (
+                    <div key={`pk-${r.id}`} className="excel-preview-row">
+                      <span className="tag danger">重点</span>
+                      <span className="excel-preview-title">{r.title}</span>
+                      <span className="muted">{formatDateCn(r.dueAt)}</span>
+                    </div>
+                  ))}
+                  {plan.planNormal.map((r) => (
+                    <div key={`pn-${r.id}`} className="excel-preview-row">
+                      <span className="tag">一般</span>
+                      <span className="excel-preview-title">{r.title}</span>
+                      <span className="muted">{formatDateCn(r.dueAt)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
-            <div className="muted" style={{ marginTop: 4 }}>
-              重点工作 <b>{plan.planKey.length}</b> 项 · 一般工作 <b>{plan.planNormal.length}</b> 项
-            </div>
-          </div>
+          ) : null}
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 18, justifyContent: 'flex-end' }}>

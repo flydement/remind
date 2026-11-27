@@ -13,7 +13,15 @@ import { generateReport, upsertReport } from '../src/shared/reports'
 import { buildExcelFilename, collectMonthlyExcelPlan, generateWorkExcelBytes } from '../src/shared/excel'
 import { addMonthsClamped, inWorkHours, nextWorkday, relativeDaysLabel, toLocalDate } from '../src/shared/time'
 import { EMPTY_STATE, normalizeTheme, THEME_OPTIONS, type AppState, type WorkItem } from '../src/shared/types'
-import { seedHealth, seedQuotes } from '../src/shared/defaults'
+import {
+  DEFAULT_HEALTH,
+  mergeBuiltinHealth,
+  mergeBuiltinQuotes,
+  SAMPLE_QUOTES,
+  seedDemoWork,
+  seedHealth,
+  seedQuotes
+} from '../src/shared/defaults'
 
 function makeState(partial: Partial<AppState> = {}): AppState {
   return {
@@ -392,12 +400,78 @@ test('excel: groups completed & planned tasks into 重点/一般 and generates v
   assert.equal(filename, '研发部-2026年11月工作完成情况及12月工作计划.xlsx')
 })
 
-test('themes: exposes 7 curated themes including eyecare, minimal, cute, and cartoon with safe fallback', () => {
+test('themes: exposes 8 curated themes including eyecare, minimal, cute, pinkcat, and cartoon with safe fallback', () => {
   const ids = THEME_OPTIONS.map((t) => t.id)
-  assert.deepEqual(ids, ['slate', 'eyecare', 'minimal', 'cute', 'cartoon', 'paper', 'dark'])
+  assert.deepEqual(ids, ['slate', 'eyecare', 'minimal', 'cute', 'pinkcat', 'cartoon', 'paper', 'dark'])
   for (const id of ids) {
     assert.equal(normalizeTheme(id), id)
   }
   assert.equal(normalizeTheme('unknown'), 'slate')
   assert.equal(normalizeTheme(undefined), 'slate')
+})
+
+test('defaults: seedDemoWork produces 3 valid onboarding items spanning today and upcoming horizons', () => {
+  const ref = new Date(2026, 10, 25, 10, 0, 0)
+  const demo = seedDemoWork(ref)
+  assert.equal(demo.length, 3)
+  assert.equal(demo[0].priority, 'high')
+  assert.ok((demo[0].subtasks?.length ?? 0) >= 3)
+  assert.equal(toLocalDate(new Date(demo[1].dueAt)), '2026-11-25')
+  assert.equal(toLocalDate(new Date(demo[2].dueAt)), '2026-12-02')
+})
+
+test('defaults: built-in quote catalog has 100+ unique entries across all kinds and merges cleanly', () => {
+  assert.ok(SAMPLE_QUOTES.length >= 100, `expected >= 100 quotes, got ${SAMPLE_QUOTES.length}`)
+  const unique = new Set(SAMPLE_QUOTES.map((q) => q.content.trim()))
+  assert.equal(unique.size, SAMPLE_QUOTES.length)
+
+  const byKind = { motivation: 0, riddle: 0, joke: 0 }
+  for (const q of SAMPLE_QUOTES) {
+    byKind[q.kind]++
+    if (q.kind === 'riddle') {
+      assert.ok(q.answer && q.answer.trim().length > 0, `riddle missing answer: ${q.content}`)
+    }
+  }
+  assert.ok(byKind.motivation >= 40)
+  assert.ok(byKind.riddle >= 30)
+  assert.ok(byKind.joke >= 30)
+
+  // Merging preserves existing disabled state and custom items while adding missing built-ins
+  const custom = { id: 'qt_custom', kind: 'motivation' as const, content: '自定义专属格言', enabled: true }
+  const firstDisabled = { id: 'qt_old', ...SAMPLE_QUOTES[0], enabled: false }
+  const { quotes: merged, added } = mergeBuiltinQuotes([custom, firstDisabled])
+  assert.equal(added, SAMPLE_QUOTES.length - 1)
+  assert.equal(merged.length, SAMPLE_QUOTES.length + 1)
+  assert.equal(merged[0].id, 'qt_custom')
+  assert.equal(merged[1].enabled, false)
+})
+
+test('defaults: built-in health rhythms have 12 unique presets and merge cleanly', () => {
+  assert.ok(DEFAULT_HEALTH.length >= 12, `expected >= 12 health rhythms, got ${DEFAULT_HEALTH.length}`)
+  const titles = new Set(DEFAULT_HEALTH.map((h) => h.title.trim()))
+  assert.equal(titles.size, DEFAULT_HEALTH.length)
+  for (const h of DEFAULT_HEALTH) {
+    assert.ok(h.intervalMinutes >= 15)
+    assert.match(h.workStart, /^\d{2}:\d{2}$/)
+    assert.match(h.workEnd, /^\d{2}:\d{2}$/)
+  }
+
+  const custom = {
+    id: 'hl_custom',
+    title: '吃水果补维C',
+    message: '午后吃个苹果',
+    emoji: '🍎',
+    enabled: true,
+    intervalMinutes: 150,
+    workHoursOnly: true,
+    workStart: '14:00',
+    workEnd: '17:00'
+  }
+  const customizedFirst = { ...DEFAULT_HEALTH[0], id: 'hl_old', enabled: false, intervalMinutes: 90 }
+  const { health: merged, added } = mergeBuiltinHealth([custom, customizedFirst])
+  assert.equal(added, DEFAULT_HEALTH.length - 1)
+  assert.equal(merged.length, DEFAULT_HEALTH.length + 1)
+  assert.equal(merged[0].id, 'hl_custom')
+  assert.equal(merged[1].enabled, false)
+  assert.equal(merged[1].intervalMinutes, 90)
 })

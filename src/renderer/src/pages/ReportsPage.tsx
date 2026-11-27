@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   AlertCircle,
+  BookmarkCheck,
   Check,
   CheckCircle2,
   ChevronLeft,
@@ -11,11 +12,14 @@ import {
   FilePlus2,
   FileSpreadsheet,
   Percent,
+  Printer,
   RefreshCw,
-  Save
+  Save,
+  Trash2
 } from 'lucide-react'
 import type { ReportKind, ReportStyle } from '@shared/types'
-import { periodOf, upsertReport } from '@shared/reports'
+import { createId } from '@shared/ids'
+import { generateReport, periodOf, upsertReport } from '@shared/reports'
 import { addDays, addMonthsClamped, formatDateTimeCn, toLocalDate } from '@shared/time'
 import PageHead from '../components/PageHead'
 import ExportExcelModal from '../components/ExportExcelModal'
@@ -76,10 +80,19 @@ export default function ReportsPage({ app }: { app: ReturnType<typeof useAppStat
     [list, targetPeriod]
   )
 
-  const current = useMemo(
-    () => (selectedId ? list.find((r) => r.id === selectedId) : periodMatched ?? list[0]) ?? null,
+  // Live instant preview when no archived report exists for the target period
+  const liveDraft = useMemo(
+    () => generateReport(app.state, kind, targetDate, style),
+    [app.state, kind, targetDate, style]
+  )
+
+  const archived = useMemo(
+    () => (selectedId ? list.find((r) => r.id === selectedId) : periodMatched) ?? null,
     [list, selectedId, periodMatched]
   )
+
+  const current = archived ?? liveDraft
+  const isLivePreview = !archived
 
   useEffect(() => {
     setSelectedId(null)
@@ -88,30 +101,55 @@ export default function ReportsPage({ app }: { app: ReturnType<typeof useAppStat
     setEditingBody(null)
   }, [kind])
 
-  const generate = (nextStyle = style): void => {
+  const archiveOrRefresh = (nextStyle = style, silent = false): void => {
+    const wasPreview = !periodMatched
     setSelectedId(null)
     setEditingBody(null)
     app.patch((s) => upsertReport(s, kind, targetDate, nextStyle))
+    if (!silent) {
+      app.setFlash({
+        id: createId('fl'),
+        title: wasPreview ? '已归档本期报告' : '已重新汇总本期报告',
+        body: current.title,
+        source: 'info'
+      })
+    }
   }
 
   const handleStyleSwitch = (nextStyle: ReportStyle): void => {
     setStyle(nextStyle)
-    if (periodMatched || current) {
-      generate(nextStyle)
+    setEditingBody(null)
+    if (periodMatched) {
+      archiveOrRefresh(nextStyle, true)
     }
   }
 
   const saveBodyEdit = (): void => {
-    if (!current || editingBody === null) return
-    app.patch((s) => ({
-      ...s,
-      reports: s.reports.map((r) => (r.id === current.id ? { ...r, body: editingBody } : r))
-    }))
+    if (editingBody === null) return
+    if (archived) {
+      app.patch((s) => ({
+        ...s,
+        reports: s.reports.map((r) => (r.id === archived.id ? { ...r, body: editingBody } : r))
+      }))
+    } else {
+      app.patch((s) => {
+        const next = upsertReport(s, kind, targetDate, style)
+        return {
+          ...next,
+          reports: next.reports.map((r, idx) => (idx === 0 ? { ...r, body: editingBody } : r))
+        }
+      })
+    }
     setEditingBody(null)
+    app.setFlash({
+      id: createId('fl'),
+      title: '已保存报告修改',
+      body: current.title,
+      source: 'info'
+    })
   }
 
   const handleCopy = async (): Promise<void> => {
-    if (!current) return
     const text = `${current.title}\n\n${editingBody ?? current.body}`
     const ok = await copyText(text)
     if (ok) {
@@ -121,7 +159,6 @@ export default function ReportsPage({ app }: { app: ReturnType<typeof useAppStat
   }
 
   const handleExportMd = (): void => {
-    if (!current) return
     const md = `# ${current.title}\n\n${editingBody ?? current.body}\n`
     const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -132,15 +169,22 @@ export default function ReportsPage({ app }: { app: ReturnType<typeof useAppStat
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+    app.setFlash({
+      id: createId('fl'),
+      title: '已导出 Markdown 报告',
+      body: `${current.title.replace(/\s+/g, '')}.md`,
+      source: 'info'
+    })
   }
 
-  const periodLabel = `${toLocalDate(targetPeriod.start)} ~ ${toLocalDate(targetPeriod.end)}`
+  const activePeriodLabel = `${toLocalDate(new Date(current.periodStart))} ~ ${toLocalDate(new Date(current.periodEnd))}`
+  const targetPeriodLabel = `${toLocalDate(targetPeriod.start)} ~ ${toLocalDate(targetPeriod.end)}`
 
   return (
     <>
       <PageHead
         title="周报与月报"
-        sub="自动汇总选定周期内的完成事项、推进状态、子步骤进度与风险提示，支持三种汇报模板与在线修订。"
+        sub="实时自动汇总选定周期内的完成事项、推进状态与风险提示，打开即看、一键复制或导出台账。"
         right={
           <button className="btn ghost small" onClick={() => setExcelOpen(true)}>
             <FileSpreadsheet size={13} color="var(--forest)" />
@@ -149,59 +193,90 @@ export default function ReportsPage({ app }: { app: ReturnType<typeof useAppStat
         }
       />
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-        <div className="filters" style={{ marginBottom: 0 }}>
-          <button className={`chip ${kind === 'weekly' ? 'on' : ''}`} onClick={() => setKind('weekly')}>工作周报</button>
-          <button className={`chip ${kind === 'monthly' ? 'on' : ''}`} onClick={() => setKind('monthly')}>工作月报</button>
-          <span className="muted" style={{ margin: '0 4px' }}>|</span>
-          {(
-            [
-              ['executive', '严谨汇报版'],
-              ['concise', '精简要点版'],
-              ['warm', '温和复盘版']
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              className={`chip ${style === id ? 'on' : ''}`}
-              onClick={() => handleStyleSwitch(id)}
-            >
-              {label}
+      <div className="work-toolbar" style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="seg-tabs">
+            <button type="button" className={kind === 'weekly' ? 'on' : ''} onClick={() => setKind('weekly')}>
+              工作周报
             </button>
-          ))}
+            <button type="button" className={kind === 'monthly' ? 'on' : ''} onClick={() => setKind('monthly')}>
+              工作月报
+            </button>
+          </div>
+          <div className="seg-tabs">
+            {(
+              [
+                ['executive', '严谨汇报'],
+                ['concise', '精简要点'],
+                ['warm', '温和复盘']
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className={style === id ? 'on' : ''}
+                onClick={() => handleStyleSwitch(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button className="btn ghost small" onClick={() => { setSelectedId(null); setOffset((o) => o - 1) }}>
-            <ChevronLeft size={13} />
-            {kind === 'weekly' ? '上一周' : '上个月'}
-          </button>
-          <button
-            className="btn ghost small"
-            disabled={offset === 0}
-            onClick={() => { setSelectedId(null); setOffset(0) }}
-            title={periodLabel}
-          >
-            {offset === 0 ? (kind === 'weekly' ? '本周' : '本月') : periodLabel}
-          </button>
-          <button className="btn ghost small" onClick={() => { setSelectedId(null); setOffset((o) => o + 1) }}>
-            {kind === 'weekly' ? '下一周' : '下个月'}
-            <ChevronRight size={13} />
-          </button>
-          <button className="btn small" onClick={() => generate(style)}>
-            <RefreshCw size={13} />
-            {periodMatched ? '重新生成该期' : '生成该期报告'}
+          <div className="period-stepper">
+            <button
+              type="button"
+              className="icon-btn"
+              title={kind === 'weekly' ? '上一周' : '上个月'}
+              onClick={() => {
+                setSelectedId(null)
+                setEditingBody(null)
+                setOffset((o) => o - 1)
+              }}
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <button
+              type="button"
+              className="period-stepper-label"
+              disabled={offset === 0 && !selectedId}
+              onClick={() => {
+                setSelectedId(null)
+                setEditingBody(null)
+                setOffset(0)
+              }}
+              title={`点击回到${kind === 'weekly' ? '本周' : '本月'}（${targetPeriodLabel}）`}
+            >
+              {offset === 0 ? (kind === 'weekly' ? '本周' : '本月') : targetPeriodLabel}
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              title={kind === 'weekly' ? '下一周' : '下个月'}
+              onClick={() => {
+                setSelectedId(null)
+                setEditingBody(null)
+                setOffset((o) => o + 1)
+              }}
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+          <button className="btn ghost small" onClick={() => archiveOrRefresh(style)}>
+            {isLivePreview ? <BookmarkCheck size={13} /> : <RefreshCw size={13} />}
+            {isLivePreview ? '归档该期' : '重新汇总'}
           </button>
         </div>
       </div>
 
-      {list.length > 1 ? (
+      {list.length > 0 ? (
         <div className="report-history">
-          <span className="muted">已归档报告：</span>
+          <span className="muted">已归档：</span>
           {list.map((r) => (
             <button
               key={r.id}
-              className={`chip ${current?.id === r.id ? 'on' : ''}`}
+              className={`chip ${archived?.id === r.id ? 'on' : ''}`}
               onClick={() => {
                 setSelectedId(r.id)
                 setCopied(false)
@@ -214,96 +289,124 @@ export default function ReportsPage({ app }: { app: ReturnType<typeof useAppStat
         </div>
       ) : null}
 
-      {current ? (
-        <>
-          <div className="grid-4" style={{ marginBottom: 18 }}>
-            <div className="card stat">
-              <div className="stat-top">
-                <span>阶段完成率</span>
-                <div className="stat-icon primary"><Percent size={15} /></div>
-              </div>
-              <b>{current.stats.completionRate ?? (current.stats.done + current.stats.pending > 0 ? Math.round((current.stats.done / (current.stats.done + current.stats.pending)) * 100) : 0)}%</b>
-            </div>
-            <div className="card stat">
-              <div className="stat-top">
-                <span>本期新建</span>
-                <div className="stat-icon"><FilePlus2 size={15} /></div>
-              </div>
-              <b>{current.stats.created}</b>
-            </div>
-            <div className="card stat">
-              <div className="stat-top">
-                <span>已完成交付</span>
-                <div className="stat-icon forest"><CheckCircle2 size={15} /></div>
-              </div>
-              <b style={{ color: 'var(--forest)' }}>{current.stats.done}</b>
-            </div>
-            <div className="card stat">
-              <div className="stat-top">
-                <span>逾期需跟进</span>
-                <div className="stat-icon terra"><AlertCircle size={15} /></div>
-              </div>
-              <b style={current.stats.overdue > 0 ? { color: 'var(--danger)' } : undefined}>{current.stats.overdue}</b>
+      <div className="grid-4" style={{ marginBottom: 18 }}>
+        <div className="card stat">
+          <div className="stat-top">
+            <span>阶段完成率</span>
+            <div className="stat-icon primary">
+              <Percent size={15} />
             </div>
           </div>
-
-          <div className="card">
-            <div className="section-head">
-              <div>
-                <h3>{current.title}</h3>
-                <p className="muted" style={{ margin: '4px 0 0' }}>
-                  生成于 {formatDateTimeCn(current.generatedAt)} · 统计区间 {periodLabel}
-                </p>
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {editingBody === null ? (
-                  <button className="btn ghost small" onClick={() => setEditingBody(current.body)}>
-                    <Edit3 size={13} />
-                    微调正文
-                  </button>
-                ) : (
-                  <button className="btn forest small" onClick={saveBodyEdit}>
-                    <Save size={13} />
-                    保存修改
-                  </button>
-                )}
-                <button className="btn ghost small" onClick={handleExportMd}>
-                  <Download size={13} />
-                  导出 .md
-                </button>
-                <button className="btn small" onClick={() => void handleCopy()}>
-                  {copied ? <Check size={13} /> : <Copy size={13} />}
-                  {copied ? '已复制全文' : '复制全文'}
-                </button>
-              </div>
-            </div>
-
-            {editingBody !== null ? (
-              <div style={{ marginTop: 12 }}>
-                <textarea
-                  className="report-editor"
-                  value={editingBody}
-                  onChange={(e) => setEditingBody(e.target.value)}
-                />
-              </div>
-            ) : (
-              <div className="report-paper">
-                <div className="report">{current.body}</div>
-              </div>
-            )}
-          </div>
-        </>
-      ) : (
-        <div className="card empty">
-          尚未生成 {periodLabel} 的{kind === 'weekly' ? '周报' : '月报'}。点击右上角「生成该期报告」即可一键汇总草稿。
+          <b>
+            {current.stats.completionRate ??
+              (current.stats.done + current.stats.pending > 0
+                ? Math.round((current.stats.done / (current.stats.done + current.stats.pending)) * 100)
+                : 0)}
+            %
+          </b>
         </div>
-      )}
-      <ExportExcelModal
-        open={excelOpen}
-        initialDate={targetDate}
-        app={app}
-        onClose={() => setExcelOpen(false)}
-      />
+        <div className="card stat">
+          <div className="stat-top">
+            <span>本期新建</span>
+            <div className="stat-icon">
+              <FilePlus2 size={15} />
+            </div>
+          </div>
+          <b>{current.stats.created}</b>
+        </div>
+        <div className="card stat">
+          <div className="stat-top">
+            <span>已完成交付</span>
+            <div className="stat-icon forest">
+              <CheckCircle2 size={15} />
+            </div>
+          </div>
+          <b style={{ color: 'var(--forest)' }}>{current.stats.done}</b>
+        </div>
+        <div className="card stat">
+          <div className="stat-top">
+            <span>逾期需跟进</span>
+            <div className="stat-icon terra">
+              <AlertCircle size={15} />
+            </div>
+          </div>
+          <b style={current.stats.overdue > 0 ? { color: 'var(--danger)' } : undefined}>{current.stats.overdue}</b>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="section-head">
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <h3>{current.title}</h3>
+              {isLivePreview ? <span className="tag primary">实时草稿</span> : <span className="tag accent">已归档</span>}
+            </div>
+            <p className="muted" style={{ margin: '4px 0 0' }}>
+              {isLivePreview ? '随最新事项实时计算' : `归档于 ${formatDateTimeCn(current.generatedAt)}`} · 统计区间{' '}
+              {activePeriodLabel}
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {archived ? (
+              <button
+                className="icon-btn"
+                title="移除该份归档报告（支持撤销）"
+                onClick={() => {
+                  app.deleteReport(archived.id)
+                  setSelectedId(null)
+                  setEditingBody(null)
+                }}
+              >
+                <Trash2 size={14} />
+              </button>
+            ) : null}
+            {editingBody === null ? (
+              <button className="btn ghost small" onClick={() => setEditingBody(current.body)}>
+                <Edit3 size={13} />
+                微调正文
+              </button>
+            ) : (
+              <>
+                <button className="btn ghost small" onClick={() => setEditingBody(null)}>
+                  取消
+                </button>
+                <button className="btn forest small" onClick={saveBodyEdit}>
+                  <Save size={13} />
+                  保存修改
+                </button>
+              </>
+            )}
+            <button className="btn ghost small" onClick={() => window.print()} title="打印或另存为 PDF">
+              <Printer size={13} />
+              打印 / PDF
+            </button>
+            <button className="btn ghost small" onClick={handleExportMd}>
+              <Download size={13} />
+              导出 .md
+            </button>
+            <button className="btn small" onClick={() => void handleCopy()}>
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+              {copied ? '已复制全文' : '复制全文'}
+            </button>
+          </div>
+        </div>
+
+        {editingBody !== null ? (
+          <div style={{ marginTop: 12 }}>
+            <textarea
+              className="report-editor"
+              value={editingBody}
+              onChange={(e) => setEditingBody(e.target.value)}
+            />
+          </div>
+        ) : (
+          <div className="report-paper">
+            <div className="report">{current.body}</div>
+          </div>
+        )}
+      </div>
+
+      <ExportExcelModal open={excelOpen} app={app} onClose={() => setExcelOpen(false)} />
     </>
   )
 }

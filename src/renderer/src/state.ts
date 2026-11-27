@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AppState, NotifyEvent, ThemeMode, WorkItem, WorkStatus } from '@shared/types'
 import { EMPTY_STATE, normalizePriority, normalizeTheme, THEME_OPTIONS } from '@shared/types'
-import { seedHealth, seedQuotes } from '@shared/defaults'
+import {
+  HEALTH_CATALOG_VERSION,
+  mergeBuiltinHealth,
+  mergeBuiltinQuotes,
+  QUOTES_CATALOG_VERSION,
+  seedDemoWork,
+  seedHealth,
+  seedQuotes
+} from '@shared/defaults'
 import { createId } from '@shared/ids'
-import { isPastDue, isSameDay, nowIso, toLocalDate } from '@shared/time'
+import { addDays, isPastDue, isSameDay, nowIso, toLocalDate } from '@shared/time'
 import {
   batchPostponeOverdue,
   completeWorkItem,
@@ -47,12 +55,30 @@ const THEME_META_COLOR: Record<ThemeMode, string> = Object.fromEntries(
 ) as Record<ThemeMode, string>
 
 function fallbackState(): AppState {
-  return { ...EMPTY_STATE, quotes: seedQuotes(), health: seedHealth() }
+  return {
+    ...EMPTY_STATE,
+    quotes: seedQuotes(),
+    quoteSettings: { ...EMPTY_STATE.quoteSettings, catalogVersion: QUOTES_CATALOG_VERSION },
+    health: seedHealth(),
+    settings: { ...EMPTY_STATE.settings, healthCatalogVersion: HEALTH_CATALOG_VERSION }
+  }
 }
 
 function hydrate(raw: Partial<AppState> | null | undefined): AppState {
   const base = fallbackState()
   const safe = raw && typeof raw === 'object' ? raw : {}
+  const prevCatalog = safe.quoteSettings?.catalogVersion ?? 1
+  const rawQuotes = Array.isArray(safe.quotes) && safe.quotes.length ? safe.quotes : base.quotes
+  const quotes =
+    prevCatalog < QUOTES_CATALOG_VERSION && Array.isArray(safe.quotes) && safe.quotes.length
+      ? mergeBuiltinQuotes(rawQuotes).quotes
+      : rawQuotes
+  const prevHealthCatalog = safe.settings?.healthCatalogVersion ?? 1
+  const rawHealth = Array.isArray(safe.health) && safe.health.length ? safe.health : base.health
+  const health =
+    prevHealthCatalog < HEALTH_CATALOG_VERSION && Array.isArray(safe.health) && safe.health.length
+      ? mergeBuiltinHealth(rawHealth).health
+      : rawHealth
   return {
     ...base,
     ...safe,
@@ -64,10 +90,18 @@ function hydrate(raw: Partial<AppState> | null | undefined): AppState {
           subtasks: Array.isArray(w.subtasks) ? w.subtasks : []
         }))
       : [],
-    quotes: Array.isArray(safe.quotes) && safe.quotes.length ? safe.quotes : base.quotes,
-    health: Array.isArray(safe.health) && safe.health.length ? safe.health : base.health,
-    quoteSettings: { ...base.quoteSettings, ...(safe.quoteSettings ?? {}) },
-    settings: { ...base.settings, ...(safe.settings ?? {}) },
+    quotes,
+    health,
+    quoteSettings: {
+      ...base.quoteSettings,
+      ...(safe.quoteSettings ?? {}),
+      catalogVersion: Math.max(prevCatalog, QUOTES_CATALOG_VERSION)
+    },
+    settings: {
+      ...base.settings,
+      ...(safe.settings ?? {}),
+      healthCatalogVersion: Math.max(prevHealthCatalog, HEALTH_CATALOG_VERSION)
+    },
     reports: Array.isArray(safe.reports) ? safe.reports : [],
     inbox: Array.isArray(safe.inbox) ? safe.inbox : [],
     focusStats: { ...base.focusStats!, ...(safe.focusStats ?? {}) }
@@ -98,6 +132,8 @@ export function useAppState() {
   const [flash, setFlash] = useState<FlashMessage | null>(null)
   const [reminderQueue, setReminderQueue] = useState<NotifyEvent[]>([])
   const [focusTimer, setFocusTimer] = useState<FocusTimerState>(IDLE_FOCUS)
+  const focusTimerRef = useRef(focusTimer)
+  focusTimerRef.current = focusTimer
   const focusEndAtRef = useRef<number | null>(null)
   const [notifyPerm, setNotifyPerm] = useState<NotificationPermission>(
     typeof Notification === 'undefined' ? 'denied' : Notification.permission
@@ -261,9 +297,27 @@ export function useAppState() {
   }, [])
 
   const stopFocus = useCallback(() => {
+    const cur = focusTimerRef.current
+    const endAt = focusEndAtRef.current
     focusEndAtRef.current = null
     setFocusTimer(IDLE_FOCUS)
-  }, [])
+
+    if (!cur.active || cur.mode !== 'focus') return
+    const rem = !cur.paused && endAt ? Math.max(0, Math.round((endAt - Date.now()) / 1000)) : cur.remainingSeconds
+    const elapsedSec = Math.max(0, cur.totalSeconds - rem)
+    const elapsedMins = Math.floor(elapsedSec / 60)
+    if (elapsedMins >= 1) {
+      const updated = recordFocusMinutes(stateRef.current, elapsedMins, cur.workId)
+      void persist(updated)
+      const workTitle = cur.workId ? stateRef.current.workItems.find((w) => w.id === cur.workId)?.title : undefined
+      setFlash({
+        id: createId('fl'),
+        title: workTitle ? `已结束专注 · ${workTitle}` : '已结束本次专注',
+        body: `已为你记录本次专注时长 ${elapsedMins} 分钟。`,
+        source: 'work'
+      })
+    }
+  }, [persist])
 
   useEffect(() => {
     if (!focusTimer.active || focusTimer.paused) return
@@ -351,9 +405,16 @@ export function useAppState() {
         const raw = localStorage.getItem('rian-state')
         if (raw) {
           try {
-            const hydrated = hydrate(JSON.parse(raw) as AppState)
+            const parsed = JSON.parse(raw) as Partial<AppState>
+            const hydrated = hydrate(parsed)
             stateRef.current = hydrated
             setState(hydrated)
+            if (
+              (parsed.quoteSettings?.catalogVersion ?? 1) < QUOTES_CATALOG_VERSION ||
+              (parsed.settings?.healthCatalogVersion ?? 1) < HEALTH_CATALOG_VERSION
+            ) {
+              localStorage.setItem('rian-state', JSON.stringify(hydrated))
+            }
           } catch {
             const fb = fallbackState()
             stateRef.current = fb
@@ -361,6 +422,18 @@ export function useAppState() {
           }
         }
         if (typeof Notification !== 'undefined') setNotifyPerm(Notification.permission)
+        const onStorage = (e: StorageEvent): void => {
+          if (e.key !== 'rian-state' || !e.newValue) return
+          try {
+            const synced = hydrate(JSON.parse(e.newValue) as AppState)
+            stateRef.current = synced
+            setState(synced)
+          } catch {
+            // ignore corrupted cross-tab payload
+          }
+        }
+        window.addEventListener('storage', onStorage)
+        unsub = () => window.removeEventListener('storage', onStorage)
       }
       setReady(true)
     }
@@ -449,7 +522,24 @@ export function useAppState() {
   const setWorkStatus = useCallback(
     (workId: string, status: WorkStatus) => {
       if (status === 'done') {
+        const target = stateRef.current.workItems.find((w) => w.id === workId)
+        if (!target || target.status === 'done') return
+        const prevItems = stateRef.current.workItems
         patch((s) => completeWorkItem(s, workId))
+        setFlash({
+          id: createId('fl'),
+          title: `已完成「${target.title}」`,
+          body:
+            target.repeat !== 'none'
+              ? '已自动排期下一周期循环事项，误点可撤销。'
+              : '已归档至已完成列表，误点可随时撤销。',
+          source: 'work',
+          actionLabel: '撤销',
+          onAction: () => {
+            patch((s) => ({ ...s, workItems: prevItems }))
+            setFlash(null)
+          }
+        })
       } else {
         patch((s) => ({
           ...s,
@@ -500,6 +590,26 @@ export function useAppState() {
     [patch]
   )
 
+  const addSubtask = useCallback(
+    (workId: string, title: string) => {
+      const clean = title.trim()
+      if (!clean) return
+      patch((s) => ({
+        ...s,
+        workItems: s.workItems.map((w) =>
+          w.id === workId
+            ? {
+                ...w,
+                updatedAt: nowIso(),
+                subtasks: [...(w.subtasks ?? []), { id: createId('st'), title: clean, done: false }]
+              }
+            : w
+        )
+      }))
+    },
+    [patch]
+  )
+
   const deleteWork = useCallback(
     (workId: string) => {
       const target = stateRef.current.workItems.find((x) => x.id === workId)
@@ -541,6 +651,7 @@ export function useAppState() {
 
   const postponeOverdue = useCallback(
     (days = 1) => {
+      const prevItems = stateRef.current.workItems
       const { state: next, count } = batchPostponeOverdue(stateRef.current, days)
       if (!count) return
       void persist(next)
@@ -548,11 +659,102 @@ export function useAppState() {
         id: createId('fl'),
         title: `已顺延 ${count} 项逾期工作`,
         body: days === 0 ? '截止时间已统一调整至今天 18:00。' : `截止时间已统一顺延至 ${days} 天后。`,
-        source: 'work'
+        source: 'work',
+        actionLabel: '撤销',
+        onAction: () => {
+          patch((s) => ({ ...s, workItems: prevItems }))
+          setFlash(null)
+        }
       })
     },
-    [persist]
+    [persist, patch]
   )
+
+  const deleteReport = useCallback(
+    (reportId: string) => {
+      const target = stateRef.current.reports.find((r) => r.id === reportId)
+      if (!target) return
+      const prevReports = stateRef.current.reports
+      patch((s) => ({ ...s, reports: s.reports.filter((r) => r.id !== reportId) }))
+      setFlash({
+        id: createId('fl'),
+        title: `已移除归档「${target.title}」`,
+        body: '仍可随时重新汇总该期报告，或点击撤销恢复。',
+        source: 'info',
+        actionLabel: '撤销',
+        onAction: () => {
+          patch((s) => ({ ...s, reports: prevReports }))
+          setFlash(null)
+        }
+      })
+    },
+    [patch]
+  )
+
+  const loadDemoWork = useCallback(() => {
+    const demo = seedDemoWork(new Date())
+    patch((s) => ({ ...s, workItems: [...demo, ...s.workItems] }))
+    setFlash({
+      id: createId('fl'),
+      title: `已导入 ${demo.length} 条体验示例`,
+      body: '可直接体验子步骤勾选、看板拖拽、周月报汇总与 Excel 台账导出。',
+      source: 'work'
+    })
+  }, [patch])
+
+  const postponeWorkItem = useCallback(
+    (workId: string, days = 1) => {
+      const target = stateRef.current.workItems.find((w) => w.id === workId)
+      if (!target || target.status === 'done') return
+      const prevDue = target.dueAt
+      const nowRef = new Date()
+      const baseDay = isPastDue(target.dueAt, nowRef)
+        ? new Date(nowRef.getFullYear(), nowRef.getMonth(), nowRef.getDate(), 18, 0, 0, 0)
+        : new Date(target.dueAt)
+      const nextDue = addDays(baseDay, Math.max(1, days)).toISOString()
+      const at = nowIso()
+      patch((s) => ({
+        ...s,
+        workItems: s.workItems.map((w) =>
+          w.id === workId
+            ? {
+                ...w,
+                dueAt: nextDue,
+                updatedAt: at,
+                notify: { ...w.notify, lastFiredAt: undefined, snoozedUntil: undefined }
+              }
+            : w
+        )
+      }))
+      setFlash({
+        id: createId('fl'),
+        title: `已顺延「${target.title}」`,
+        body: `新截止日期：${toLocalDate(new Date(nextDue))}。`,
+        source: 'work',
+        actionLabel: '撤销',
+        onAction: () => {
+          patch((s) => ({
+            ...s,
+            workItems: s.workItems.map((w) => (w.id === workId ? { ...w, dueAt: prevDue } : w))
+          }))
+          setFlash(null)
+        }
+      })
+    },
+    [patch]
+  )
+
+  const shuffleQuote = useCallback(() => {
+    const s = stateRef.current.quoteSettings
+    const pool = stateRef.current.quotes.filter((q) => q.enabled && s.kinds.includes(q.kind))
+    if (!pool.length) return
+    const unused = pool.filter((q) => q.id !== s.lastQuoteId)
+    const pick = unused[Math.floor(Math.random() * unused.length)] ?? pool[0]
+    patch((st) => ({
+      ...st,
+      quoteSettings: { ...st.quoteSettings, lastQuoteId: pick.id }
+    }))
+  }, [patch])
 
   const saveWork = useCallback(
     (item: WorkItem) => {
@@ -581,6 +783,16 @@ export function useAppState() {
         inbox: [ev, ...s.inbox].slice(0, 100)
       }))
       setFlash({ id: ev.id, title: ev.title, body: ev.body, source: 'work' })
+    },
+    [patch]
+  )
+
+  const markInboxRead = useCallback(
+    (inboxId: string) => {
+      patch((s) => ({
+        ...s,
+        inbox: s.inbox.map((n) => (n.id === inboxId && !n.read ? { ...n, read: true } : n))
+      }))
     },
     [patch]
   )
@@ -658,6 +870,7 @@ export function useAppState() {
     flash,
     setFlash,
     focusTimer,
+    defaultFocusMinutes: state.settings.focusMinutesDefault ?? 25,
     startFocus,
     pauseResumeFocus,
     stopFocus,
@@ -676,10 +889,16 @@ export function useAppState() {
     toggleWork,
     togglePinWork,
     toggleSubtask,
+    addSubtask,
     deleteWork,
     clearCompletedWork,
     postponeOverdue,
+    postponeWorkItem,
+    deleteReport,
+    loadDemoWork,
+    shuffleQuote,
     saveWork,
+    markInboxRead,
     markAllInboxRead,
     clearInbox,
     exportState,

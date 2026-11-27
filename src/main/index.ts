@@ -2,7 +2,14 @@ import { app, BrowserWindow, ipcMain, Notification, Tray, Menu, nativeImage, she
 import { join, dirname } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { EMPTY_STATE, normalizePriority, THEME_OPTIONS, type AppState, type NotifyEvent } from '../shared/types'
-import { seedHealth, seedQuotes } from '../shared/defaults'
+import {
+  HEALTH_CATALOG_VERSION,
+  mergeBuiltinHealth,
+  mergeBuiltinQuotes,
+  QUOTES_CATALOG_VERSION,
+  seedHealth,
+  seedQuotes
+} from '../shared/defaults'
 import { completeWorkItem, rolloverRepeats, snoozeWorkItem, tickScheduler } from '../shared/scheduler'
 
 app.setName('小猫工作助手')
@@ -39,6 +46,18 @@ function loadState(): AppState {
   try {
     const raw = readFileSync(dataFile(), 'utf-8')
     const parsed = JSON.parse(raw) as AppState
+    const prevCatalog = parsed.quoteSettings?.catalogVersion ?? 1
+    const baseQuotes = parsed.quotes?.length ? parsed.quotes : seedQuotes()
+    const quotes =
+      prevCatalog < QUOTES_CATALOG_VERSION && parsed.quotes?.length
+        ? mergeBuiltinQuotes(baseQuotes).quotes
+        : baseQuotes
+    const prevHealthCatalog = parsed.settings?.healthCatalogVersion ?? 1
+    const baseHealth = parsed.health?.length ? parsed.health : seedHealth()
+    const health =
+      prevHealthCatalog < HEALTH_CATALOG_VERSION && parsed.health?.length
+        ? mergeBuiltinHealth(baseHealth).health
+        : baseHealth
     return {
       ...EMPTY_STATE,
       ...parsed,
@@ -46,10 +65,18 @@ function loadState(): AppState {
         ...w,
         priority: normalizePriority(w.priority)
       })),
-      quotes: parsed.quotes?.length ? parsed.quotes : seedQuotes(),
-      health: parsed.health?.length ? parsed.health : seedHealth(),
-      quoteSettings: { ...EMPTY_STATE.quoteSettings, ...parsed.quoteSettings },
-      settings: { ...EMPTY_STATE.settings, ...parsed.settings },
+      quotes,
+      health,
+      quoteSettings: {
+        ...EMPTY_STATE.quoteSettings,
+        ...parsed.quoteSettings,
+        catalogVersion: Math.max(prevCatalog, QUOTES_CATALOG_VERSION)
+      },
+      settings: {
+        ...EMPTY_STATE.settings,
+        ...parsed.settings,
+        healthCatalogVersion: Math.max(prevHealthCatalog, HEALTH_CATALOG_VERSION)
+      },
       reports: parsed.reports ?? [],
       inbox: parsed.inbox ?? [],
       focusStats: { ...EMPTY_STATE.focusStats!, ...(parsed.focusStats ?? {}) }
@@ -58,7 +85,9 @@ function loadState(): AppState {
     return {
       ...EMPTY_STATE,
       quotes: seedQuotes(),
-      health: seedHealth()
+      quoteSettings: { ...EMPTY_STATE.quoteSettings, catalogVersion: QUOTES_CATALOG_VERSION },
+      health: seedHealth(),
+      settings: { ...EMPTY_STATE.settings, healthCatalogVersion: HEALTH_CATALOG_VERSION }
     }
   }
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Pin, Play, Trash2 } from 'lucide-react'
+import { CalendarPlus, ChevronDown, ChevronRight, Pin, Play, Plus, Sparkles, Trash2 } from 'lucide-react'
 import type { RepeatRule, WorkItem } from '@shared/types'
 import { formatDateCn, formatDateTimeCn, isPastDue, relativeDaysLabel } from '@shared/time'
 import { previewNotifyDate } from '@shared/parser'
@@ -14,6 +14,7 @@ const REPEAT_TAG: Record<Exclude<RepeatRule, 'none'>, string> = {
 export default function WorkList({
   items,
   empty,
+  emptyAction,
   now = new Date(),
   onToggle,
   onOpen,
@@ -21,10 +22,14 @@ export default function WorkList({
   onStartFocus,
   onTogglePin,
   onToggleSubtask,
-  onCycleDoing
+  onAddSubtask,
+  onCycleDoing,
+  onPostponeOneDay,
+  onTagClick
 }: {
   items: WorkItem[]
   empty: string
+  emptyAction?: { label: string; onClick: () => void }
   now?: Date
   onToggle: (w: WorkItem) => void
   onOpen: (w: WorkItem) => void
@@ -32,14 +37,42 @@ export default function WorkList({
   onStartFocus?: (w: WorkItem) => void
   onTogglePin?: (workId: string) => void
   onToggleSubtask?: (workId: string, subtaskId: string) => void
+  onAddSubtask?: (workId: string, title: string) => void
   onCycleDoing?: (w: WorkItem) => void
+  onPostponeOneDay?: (w: WorkItem) => void
+  onTagClick?: (tag: string) => void
 }) {
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({})
+  const [subInputs, setSubInputs] = useState<Record<string, string>>({})
 
-  if (!items.length) return <div className="empty">{empty}</div>
+  if (!items.length) {
+    return (
+      <div className="empty">
+        <div>{empty}</div>
+        {emptyAction ? (
+          <button
+            type="button"
+            className="btn ghost small"
+            style={{ marginTop: 12 }}
+            onClick={emptyAction.onClick}
+          >
+            <Sparkles size={13} color="var(--primary)" />
+            {emptyAction.label}
+          </button>
+        ) : null}
+      </div>
+    )
+  }
 
   const toggleExpand = (id: string): void => {
     setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  const submitSubtask = (workId: string): void => {
+    const val = (subInputs[workId] ?? '').trim()
+    if (!val || !onAddSubtask) return
+    onAddSubtask(workId, val)
+    setSubInputs((prev) => ({ ...prev, [workId]: '' }))
   }
 
   return (
@@ -51,6 +84,7 @@ export default function WorkList({
         const rel = !isDone ? relativeDaysLabel(w.dueAt, now) : null
         const subtasks = w.subtasks ?? []
         const doneSub = subtasks.filter((s) => s.done).length
+        const subPct = subtasks.length > 0 ? Math.round((doneSub / subtasks.length) * 100) : 0
         const expanded = Boolean(expandedIds[w.id])
 
         return (
@@ -68,44 +102,74 @@ export default function WorkList({
               <div className="title" onClick={() => onOpen(w)} style={{ cursor: 'pointer' }}>
                 {w.pinned && !isDone ? <Pin size={13} color="var(--primary)" /> : null}
                 <span className="title-text">{w.title}</span>
-                {!isDone ? (
-                  w.priority === 'high' ? (
-                    <span className="tag danger">重点</span>
-                  ) : (
-                    <span className="tag">一般</span>
-                  )
-                ) : null}
+                {!isDone && w.priority === 'high' ? <span className="tag danger">重点</span> : null}
                 {isDoing ? <span className="tag primary">进行中</span> : null}
                 {rel ? (
-                  <span className={`tag ${rel.tone === 'danger' ? 'danger' : rel.tone === 'warn' ? 'warn' : rel.tone === 'accent' ? 'accent' : ''}`}>
+                  <span
+                    className={`tag ${
+                      rel.tone === 'danger'
+                        ? 'danger'
+                        : rel.tone === 'warn'
+                          ? 'warn'
+                          : rel.tone === 'accent'
+                            ? 'accent'
+                            : ''
+                    }`}
+                  >
                     {rel.text}
                   </span>
                 ) : null}
                 {w.repeat !== 'none' ? <span className="tag accent">{REPEAT_TAG[w.repeat]}</span> : null}
-                {w.tags.map((t) => (
-                  <span key={t} className="tag">#{t}</span>
-                ))}
+                {w.tags.map((t) =>
+                  onTagClick ? (
+                    <button
+                      key={t}
+                      type="button"
+                      className="tag tag-interactive"
+                      title={`按 #${t} 筛选`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onTagClick(t)
+                      }}
+                    >
+                      #{t}
+                    </button>
+                  ) : (
+                    <span key={t} className="tag">
+                      #{t}
+                    </span>
+                  )
+                )}
               </div>
 
               <div className="meta">
                 <span>截止 {formatDateCn(w.dueAt)}</span>
+                {w.assignee ? <span>· @{w.assignee}</span> : null}
                 {w.notify.snoozedUntil ? <span>· 延后至 {formatDateTimeCn(w.notify.snoozedUntil)}</span> : null}
                 {w.notify.enabled && !w.notify.snoozedUntil && !isDone ? (
-                  <span>· 提醒 {previewNotifyDate(w.dueAt, w.notify.advanceDays, w.notify.time, w.notify.frequency)}</span>
+                  <span>
+                    · 提醒 {previewNotifyDate(w.dueAt, w.notify.advanceDays, w.notify.time, w.notify.frequency)}
+                  </span>
                 ) : null}
                 {w.focusMinutes ? <span>· 已专注 {w.focusMinutes}m</span> : null}
                 {subtasks.length > 0 ? (
-                  <button
-                    type="button"
-                    className="sample-pill"
-                    style={{ padding: '1px 7px', display: 'inline-flex', alignItems: 'center', gap: 3 }}
-                    onClick={() => toggleExpand(w.id)}
-                  >
+                  <button type="button" className="subtask-pill" onClick={() => toggleExpand(w.id)}>
                     {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-                    子任务 {doneSub}/{subtasks.length}
+                    <span>
+                      步骤 {doneSub}/{subtasks.length}
+                    </span>
+                    <i className="subtask-mini-bar">
+                      <em style={{ width: `${subPct}%` }} />
+                    </i>
                   </button>
                 ) : null}
               </div>
+
+              {w.notes.trim() ? (
+                <div className="work-note-line" title={w.notes} onClick={() => onOpen(w)}>
+                  {w.notes.trim()}
+                </div>
+              ) : null}
 
               {expanded && subtasks.length > 0 ? (
                 <div className="subtask-inline">
@@ -125,15 +189,42 @@ export default function WorkList({
                       </span>
                     </div>
                   ))}
+                  {!isDone && onAddSubtask ? (
+                    <div className="subtask-inline-add">
+                      <Plus size={12} color="var(--ink-faint)" />
+                      <input
+                        value={subInputs[w.id] ?? ''}
+                        placeholder="添加新步骤，回车保存..."
+                        onChange={(e) => setSubInputs((prev) => ({ ...prev, [w.id]: e.target.value }))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            submitSubtask(w.id)
+                          }
+                        }}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
 
             <div className="work-actions">
+              {overdue && onPostponeOneDay ? (
+                <button
+                  type="button"
+                  className="btn ghost small"
+                  title="一键顺延到明天"
+                  onClick={() => onPostponeOneDay(w)}
+                >
+                  <CalendarPlus size={12} />
+                  顺延
+                </button>
+              ) : null}
               {!isDone && onCycleDoing ? (
                 <button
                   type="button"
-                  className={`btn ghost small`}
+                  className={`btn ghost small ${isDoing ? '' : 'hover-reveal'}`}
                   title={isDoing ? '切回待办' : '标记为进行中'}
                   onClick={() => onCycleDoing(w)}
                 >
@@ -143,8 +234,8 @@ export default function WorkList({
               {!isDone && onStartFocus ? (
                 <button
                   type="button"
-                  className="icon-btn"
-                  title="对此事项开启 25 分钟专注"
+                  className="icon-btn hover-reveal"
+                  title="开启番茄专注"
                   onClick={() => onStartFocus(w)}
                 >
                   <Play size={14} />
@@ -153,7 +244,7 @@ export default function WorkList({
               {!isDone && onTogglePin ? (
                 <button
                   type="button"
-                  className={`icon-btn ${w.pinned ? 'active' : ''}`}
+                  className={`icon-btn ${w.pinned ? 'active' : 'hover-reveal'}`}
                   title={w.pinned ? '取消置顶' : '置顶'}
                   onClick={() => onTogglePin(w.id)}
                 >
@@ -163,15 +254,13 @@ export default function WorkList({
               {onDelete ? (
                 <button
                   type="button"
-                  className="icon-btn"
+                  className="icon-btn hover-reveal"
                   title="删除（支持撤销）"
                   onClick={() => onDelete(w)}
                 >
                   <Trash2 size={14} />
                 </button>
-              ) : (
-                <span className="muted">{isDone ? '已完成' : overdue ? '已逾期' : isDoing ? '进行中' : '待办'}</span>
-              )}
+              ) : null}
             </div>
           </div>
         )

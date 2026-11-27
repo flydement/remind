@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 92" fill="none">
+  <defs>
+    <linearGradient id="pkFur" x1="110" y1="18" x2="110" y2="86" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#FFF0F6"/>
+    </linearGradient>
+    <linearGradient id="pkBow" x1="130" y1="14" x2="156" y2="34" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF7EB0"/>
+      <stop offset="100%" stop-color="#EE4281"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Floating cute heart & sparkles -->
+  <path d="M48 31 C48 27 42 25 40 29 C38 25 32 27 32 31 C32 36 40 41 40 41 C40 41 48 36 48 31 Z" fill="#FF79AC" opacity="0.9"/>
+  <path d="M182 26 L184 20 L186 26 L192 28 L186 30 L184 36 L182 30 L176 28 Z" fill="#FF8AB7"/>
+  <circle cx="170" cy="44" r="3" fill="#FFC0D9"/>
+  <circle cx="52" cy="52" r="2.8" fill="#FFB3D1"/>
+
+  <!-- Cat Ears -->
+  <path d="M73 46 C68 27 72 13 81 12 C89 11 98 22 103 31 Z" fill="url(#pkFur)" stroke="#5C2641" stroke-width="3.2" stroke-linejoin="round"/>
+  <path d="M78 40 C75 29 77 20 82 19 C87 19 93 25 97 32 Z" fill="#FFA8CA"/>
+
+  <path d="M147 46 C152 27 148 13 139 12 C131 11 122 22 117 31 Z" fill="url(#pkFur)" stroke="#5C2641" stroke-width="3.2" stroke-linejoin="round"/>
+  <path d="M142 40 C145 29 143 20 138 19 C133 19 127 25 123 32 Z" fill="#FFA8CA"/>
+
+  <!-- Peeking Head Silhouette -->
+  <path d="M64 82 C62 51 80 28 110 28 C140 28 158 51 156 82 Z" fill="url(#pkFur)" stroke="#5C2641" stroke-width="3.3" stroke-linejoin="round"/>
+
+  <!-- Forehead pink tabby stripes -->
+  <path d="M102 30 C102 36 104 39 105 40" stroke="#FFA5C8" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M110 29 C110 37 110 40 110 42" stroke="#FF84B4" stroke-width="3.6" stroke-linecap="round"/>
+  <path d="M118 30 C118 36 116 39 115 40" stroke="#FFA5C8" stroke-width="3.2" stroke-linecap="round"/>
+
+  <!-- Cute Strawberry Bow on Right Ear -->
+  <g transform="translate(134, 24) rotate(18)">
+    <path d="M-2 0 C-10 -8 -18 -5 -17 2 C-16 8 -8 8 -2 2 Z" fill="url(#pkBow)" stroke="#5C2641" stroke-width="2.4" stroke-linejoin="round"/>
+    <path d="M2 0 C10 -8 18 -5 17 2 C16 8 8 8 2 2 Z" fill="url(#pkBow)" stroke="#5C2641" stroke-width="2.4" stroke-linejoin="round"/>
+    <circle cx="0" cy="1" r="4.3" fill="#FF4B8B" stroke="#5C2641" stroke-width="2.2"/>
+    <circle cx="-1" cy="-0.4" r="1.2" fill="#FFD9E9"/>
+  </g>
+
+  <!-- Sparkling Eyes -->
+  <ellipse cx="92" cy="56" rx="5.8" ry="6.7" fill="#4B1D35"/>
+  <circle cx="90" cy="53.5" r="2.3" fill="#FFFFFF"/>
+  <circle cx="94" cy="58.5" r="1.1" fill="#FFD3E5"/>
+
+  <ellipse cx="128" cy="56" rx="5.8" ry="6.7" fill="#4B1D35"/>
+  <circle cx="126" cy="53.5" r="2.3" fill="#FFFFFF"/>
+  <circle cx="130" cy="58.5" r="1.1" fill="#FFD3E5"/>
+
+  <!-- Rosy Cheeks -->
+  <ellipse cx="81" cy="65" rx="8.5" ry="4.8" fill="#FF8DB8" opacity="0.58"/>
+  <ellipse cx="139" cy="65" rx="8.5" ry="4.8" fill="#FF8DB8" opacity="0.58"/>
+
+  <!-- Tiny Nose & Smile -->
+  <path d="M107.6 62.5 C107.6 60.9 112.4 60.9 112.4 62.5 C112.4 64 110 65.8 110 65.8 C110 65.8 107.6 64 107.6 62.5 Z" fill="#FF669B"/>
+  <path d="M103 68.5 C104.5 72 108.5 71.8 110 68.8 C111.5 71.8 115.5 72 117 68.5" stroke="#5C2641" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Whiskers -->
+  <path d="M55 59 L68 61 M54 67 L67 66" stroke="#6E3552" stroke-width="2.1" stroke-linecap="round"/>
+  <path d="M165 59 L152 61 M166 67 L153 66" stroke="#6E3552" stroke-width="2.1" stroke-linecap="round"/>
+
+  <!-- Two Chubby Paws Resting on Card Edge -->
+  <g>
+    <rect x="64" y="71" width="24" height="17" rx="8.5" fill="#FFFFFF" stroke="#5C2641" stroke-width="3"/>
+    <ellipse cx="76" cy="81.5" rx="4.2" ry="3" fill="#FFA6C9"/>
+    <circle cx="71" cy="77.2" r="1.7" fill="#FFA6C9"/>
+    <circle cx="76" cy="75.8" r="1.7" fill="#FFA6C9"/>
+    <circle cx="81" cy="77.2" r="1.7" fill="#FFA6C9"/>
+
+    <rect x="132" y="71" width="24" height="17" rx="8.5" fill="#FFFFFF" stroke="#5C2641" stroke-width="3"/>
+    <ellipse cx="144" cy="81.5" rx="4.2" ry="3" fill="#FFA6C9"/>
+    <circle cx="139" cy="77.2" r="1.7" fill="#FFA6C9"/>
+    <circle cx="144" cy="75.8" r="1.7" fill="#FFA6C9"/>
+    <circle cx="149" cy="77.2" r="1.7" fill="#FFA6C9"/>
+  </g>
+</svg>

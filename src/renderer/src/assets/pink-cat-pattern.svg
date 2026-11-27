@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120" fill="none">
+  <!-- Tiny Pastel Cat Paw 1 -->
+  <g transform="translate(18, 20) rotate(-14)" fill="#F398BD" opacity="0.22">
+    <ellipse cx="10" cy="13" rx="6.2" ry="4.6"/>
+    <circle cx="3.5" cy="6.2" r="2.3"/>
+    <circle cx="8" cy="3.8" r="2.3"/>
+    <circle cx="13" cy="4.2" r="2.3"/>
+    <circle cx="17" cy="7.2" r="2.2"/>
+  </g>
+  <!-- Tiny Pastel Heart -->
+  <path d="M84 30 C84 27 79.5 25.5 78 28.5 C76.5 25.5 72 27 72 30 C72 34 78 37.5 78 37.5 C78 37.5 84 34 84 30 Z" fill="#F398BD" opacity="0.20"/>
+  <!-- Tiny Pastel Cat Paw 2 -->
+  <g transform="translate(76, 76) rotate(16)" fill="#F398BD" opacity="0.20">
+    <ellipse cx="10" cy="13" rx="6.2" ry="4.6"/>
+    <circle cx="3.5" cy="6.2" r="2.3"/>
+    <circle cx="8" cy="3.8" r="2.3"/>
+    <circle cx="13" cy="4.2" r="2.3"/>
+    <circle cx="17" cy="7.2" r="2.2"/>
+  </g>
+  <!-- Tiny 4-point Sparkle -->
+  <path d="M32 88 L33.5 83.5 L35 88 L39.5 89.5 L35 91 L33.5 95.5 L32 91 L27.5 89.5 Z" fill="#F398BD" opacity="0.22"/>
+</svg>

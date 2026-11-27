@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+      - V2
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -20,12 +24,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -36,18 +42,43 @@ jobs:
           npm run typecheck
           npm test
 
-      - name: Build web app
+      - name: Build current branch
         run: npm run build
 
+      - name: Assemble Pages site (/ = main, /v2/ = V2 preview)
+        if: github.event_name != 'pull_request'
+        run: |
+          rm -rf /tmp/pages-site /tmp/dist-current /tmp/main-wt /tmp/v2-wt
+          mkdir -p /tmp/pages-site
+          cp -r dist-web /tmp/dist-current
+          if [ "${GITHUB_REF}" = "refs/heads/V2" ]; then
+            git worktree add /tmp/main-wt origin/main
+            (cd /tmp/main-wt && npm ci && npm run build)
+            cp -r /tmp/main-wt/dist-web/. /tmp/pages-site/
+            cp -r /tmp/dist-current /tmp/pages-site/v2
+            cp -r /tmp/dist-current /tmp/pages-site/V2
+          else
+            cp -r /tmp/dist-current/. /tmp/pages-site/
+            if git rev-parse --verify origin/V2 >/dev/null 2>&1; then
+              git worktree add /tmp/v2-wt origin/V2
+              (cd /tmp/v2-wt && npm ci && npm run build)
+              cp -r /tmp/v2-wt/dist-web /tmp/pages-site/v2
+              cp -r /tmp/v2-wt/dist-web /tmp/pages-site/V2
+            fi
+          fi
+
       - name: Setup Pages
-        uses: actions/configure-pages@v5
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v6
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
         with:
-          path: dist-web
+          path: /tmp/pages-site
 
   deploy:
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -56,4 +87,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

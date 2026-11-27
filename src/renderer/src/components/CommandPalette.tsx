@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   BellOff,
   BookOpenText,
+  Cat,
   CheckCircle2,
   ClipboardList,
   CornerDownLeft,
@@ -14,19 +15,22 @@ import {
   Plus,
   Search,
   Settings,
+  Sparkles,
   Sun,
   Timer
 } from 'lucide-react'
 import { THEME_OPTIONS, type PageId, type WorkItem } from '@shared/types'
+import { parseWorkText, previewNotifyDate } from '@shared/parser'
 import { upsertReport } from '@shared/reports'
-import { formatDateCn } from '@shared/time'
-import type { useAppState } from '../state'
+import { formatDateCn, toLocalDate } from '@shared/time'
+import { newWorkItem, type useAppState } from '../state'
 
 interface CommandEntry {
   id: string
   group: string
   title: string
   hint?: string
+  searchExtra?: string
   icon: typeof Search
   run: () => void
 }
@@ -59,6 +63,7 @@ export default function CommandPalette({
   }, [open])
 
   const entries = useMemo<CommandEntry[]>(() => {
+    const focusMins = app.defaultFocusMinutes
     const base: CommandEntry[] = [
       {
         id: 'act-new-work',
@@ -75,14 +80,14 @@ export default function CommandPalette({
         }
       },
       {
-        id: 'act-focus-25',
+        id: 'act-focus',
         group: '快捷操作',
-        title: app.focusTimer.active ? '结束当前专注计时' : '开启 25 分钟番茄专注',
+        title: app.focusTimer.active ? '结束当前专注计时' : `开启 ${focusMins} 分钟番茄专注`,
         hint: app.focusTimer.active ? '停止计时' : '沉浸专注模式',
         icon: Timer,
         run: () => {
           if (app.focusTimer.active) app.stopFocus()
-          else app.startFocus(25)
+          else app.startFocus(focusMins)
         }
       },
       {
@@ -140,7 +145,7 @@ export default function CommandPalette({
         group: '外观主题',
         title: `切换主题：${t.name}（${t.badge}）`,
         hint: app.theme === t.id ? '当前使用' : t.hint,
-        icon: t.id === 'dark' ? Moon : t.id === 'slate' ? Sun : Palette,
+        icon: t.id === 'dark' ? Moon : t.id === 'slate' ? Sun : t.id === 'pinkcat' ? Cat : Palette,
         run: () => app.setTheme(t.id)
       })),
       {
@@ -193,24 +198,61 @@ export default function CommandPalette({
       }
     ]
 
-    const workEntries: CommandEntry[] = app.state.workItems.slice(0, 40).map((w) => ({
+    const workEntries: CommandEntry[] = app.state.workItems.slice(0, 60).map((w) => ({
       id: `wk-${w.id}`,
       group: w.status === 'done' ? '已完成工作项' : '待办与进行中工作项',
       title: `${w.title}${w.tags.length ? ` (${w.tags.map((t) => `#${t}`).join(' ')})` : ''}`,
       hint: `${w.status === 'done' ? '已完成' : `截止 ${formatDateCn(w.dueAt)}`} · 打开详情`,
+      searchExtra: `${w.notes} ${w.assignee ?? ''}`,
       icon: w.status === 'done' ? CheckCircle2 : ClipboardList,
       run: () => onEditWork(w)
     }))
 
     const all = [...base, ...workEntries]
-    const q = query.trim().toLowerCase()
+    const rawQ = query.trim()
+    const q = rawQ.toLowerCase()
     if (!q) return all.slice(0, 18)
-    return all.filter(
+
+    const matched = all.filter(
       (e) =>
         e.title.toLowerCase().includes(q) ||
         e.group.toLowerCase().includes(q) ||
-        (e.hint?.toLowerCase().includes(q) ?? false)
+        (e.hint?.toLowerCase().includes(q) ?? false) ||
+        (e.searchExtra?.toLowerCase().includes(q) ?? false)
     )
+
+    if (rawQ.length >= 2) {
+      const draft = parseWorkText(rawQ, app.now)
+      const dueStr = toLocalDate(new Date(draft.dueAt))
+      const notifyHint = draft.notify.enabled
+        ? previewNotifyDate(draft.dueAt, draft.notify.advanceDays, draft.notify.time, draft.notify.frequency)
+        : '不提醒'
+      const quickCreateEntry: CommandEntry = {
+        id: 'act-quick-parse-create',
+        group: '一句话极速新建',
+        title: `创建「${draft.title}」`,
+        hint: `截止 ${dueStr} · ${notifyHint}${draft.priority === 'high' ? ' · 重点' : ''}`,
+        icon: Sparkles,
+        run: () => {
+          app.saveWork(
+            newWorkItem({
+              title: draft.title,
+              dueAt: draft.dueAt,
+              priority: draft.priority,
+              assignee: draft.assignee,
+              tags: draft.tags,
+              notify: draft.notify,
+              repeat: draft.repeat,
+              notes: draft.notes,
+              sourceText: draft.sourceText
+            })
+          )
+        }
+      }
+      return matched.length === 0 ? [quickCreateEntry] : [...matched, quickCreateEntry]
+    }
+
+    return matched
   }, [app, go, onEditWork, onOpenExcel, query])
 
   useEffect(() => {
@@ -240,7 +282,7 @@ export default function CommandPalette({
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="输入命令、搜索工作项、切换页面或主题..."
+            placeholder="搜索命令/事项/主题，或直接输入一句话新建工作项..."
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
                 e.preventDefault()
@@ -287,9 +329,15 @@ export default function CommandPalette({
           )}
         </div>
         <div className="cmd-foot">
-          <span><kbd className="kbd">↑</kbd> <kbd className="kbd">↓</kbd> 选择</span>
-          <span><kbd className="kbd">Enter</kbd> 执行</span>
-          <span><kbd className="kbd">Alt+1~6</kbd> 快速切页</span>
+          <span>
+            <kbd className="kbd">↑</kbd> <kbd className="kbd">↓</kbd> 选择
+          </span>
+          <span>
+            <kbd className="kbd">Enter</kbd> 执行 / 极速建任务
+          </span>
+          <span>
+            <kbd className="kbd">Alt+1~6</kbd> 快速切页
+          </span>
         </div>
       </div>
     </div>

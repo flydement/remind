@@ -1,44 +1,89 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRight,
   Check,
   Columns3,
   FastForward,
   FileSpreadsheet,
-  HelpCircle,
   LayoutList,
   Play,
+  Plus,
   RotateCcw,
   Search,
-  SlidersHorizontal,
-  Sparkles,
   Trash2,
   X
 } from 'lucide-react'
 import type { WorkItem, WorkStatus } from '@shared/types'
-import { describeDraft, parseWorkText, WORK_SYNTAX_GUIDE } from '@shared/parser'
 import { formatDateCn, isPastDue, isSameDay, relativeDaysLabel } from '@shared/time'
 import PageHead from '../components/PageHead'
+import QuickComposer from '../components/QuickComposer'
 import { newWorkItem, type useAppState } from '../state'
 import WorkEditor from '../components/WorkEditor'
 import WorkList from '../components/WorkList'
 import ExportExcelModal from '../components/ExportExcelModal'
 
-type Filter = 'open' | 'doing' | 'today' | 'overdue' | 'done' | 'all'
+export type WorkFilter = 'open' | 'doing' | 'today' | 'overdue' | 'done' | 'all'
 type ViewMode = 'list' | 'kanban'
 type SortBy = 'due' | 'priority' | 'created'
 
-export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> }) {
-  const [view, setView] = useState<ViewMode>('list')
-  const [filter, setFilter] = useState<Filter>('open')
-  const [sortBy, setSortBy] = useState<SortBy>('due')
+interface WorkSection {
+  id: string
+  label: string
+  tone?: 'danger' | 'warn' | 'primary' | 'accent'
+  items: WorkItem[]
+}
+
+function readStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  try {
+    const val = localStorage.getItem(key) as T | null
+    return val && allowed.includes(val) ? val : fallback
+  } catch {
+    return fallback
+  }
+}
+
+export default function WorkPage({
+  app,
+  initialFilter
+}: {
+  app: ReturnType<typeof useAppState>
+  initialFilter?: WorkFilter | null
+}) {
+  const [view, setView] = useState<ViewMode>(() => readStored('rian-work-view', ['list', 'kanban'] as const, 'list'))
+  const [filter, setFilter] = useState<WorkFilter>(initialFilter ?? 'open')
+  const [sortBy, setSortBy] = useState<SortBy>(() =>
+    readStored('rian-work-sort', ['due', 'priority', 'created'] as const, 'due')
+  )
   const [activeTag, setActiveTag] = useState<string | null>(null)
   const [query, setQuery] = useState('')
-  const [text, setText] = useState('')
   const [editing, setEditing] = useState<WorkItem | null>(null)
+  const clearComposerRef = useRef<(() => void) | null>(null)
   const [excelOpen, setExcelOpen] = useState(false)
-  const [showSyntax, setShowSyntax] = useState(false)
-  const draft = useMemo(() => parseWorkText(text, app.now), [text, app.now])
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dragOverCol, setDragOverCol] = useState<WorkStatus | null>(null)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('rian-work-view', view)
+    } catch {
+      // ignore storage errors
+    }
+  }, [view])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('rian-work-sort', sortBy)
+    } catch {
+      // ignore storage errors
+    }
+  }, [sortBy])
+
+  useEffect(() => {
+    if (initialFilter) {
+      setView('list')
+      setFilter(initialFilter)
+    }
+  }, [initialFilter])
 
   const allTags = useMemo(() => {
     const set = new Set<string>()
@@ -56,6 +101,7 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
       return (
         w.title.toLowerCase().includes(q) ||
         w.notes.toLowerCase().includes(q) ||
+        (w.assignee?.toLowerCase().includes(q) ?? false) ||
         w.tags.some((t) => t.toLowerCase().includes(q)) ||
         (w.subtasks?.some((s) => s.title.toLowerCase().includes(q)) ?? false)
       )
@@ -96,6 +142,44 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
     return sortItems(filtered, sortBy, filter === 'done')
   }, [baseMatched, filter, sortBy, app.now])
 
+  const groupedSections = useMemo<WorkSection[] | null>(() => {
+    if (sortBy !== 'due' || (filter !== 'open' && filter !== 'all') || listItems.length === 0) {
+      return null
+    }
+    const todayStart = new Date(app.now.getFullYear(), app.now.getMonth(), app.now.getDate()).getTime()
+    const sevenDaysEnd = todayStart + 8 * 86_400_000
+
+    const overdue: WorkItem[] = []
+    const today: WorkItem[] = []
+    const week: WorkItem[] = []
+    const later: WorkItem[] = []
+    const done: WorkItem[] = []
+
+    for (const w of listItems) {
+      if (w.status === 'done') {
+        done.push(w)
+      } else if (isPastDue(w.dueAt, app.now)) {
+        overdue.push(w)
+      } else if (isSameDay(new Date(w.dueAt), app.now)) {
+        today.push(w)
+      } else if (new Date(w.dueAt).getTime() < sevenDaysEnd) {
+        week.push(w)
+      } else {
+        later.push(w)
+      }
+    }
+
+    const sections: WorkSection[] = []
+    if (overdue.length) sections.push({ id: 'overdue', label: '已逾期', tone: 'danger', items: overdue })
+    if (today.length) sections.push({ id: 'today', label: '今日到期', tone: 'warn', items: today })
+    if (week.length) sections.push({ id: 'week', label: '近 7 天', tone: 'primary', items: week })
+    if (later.length) sections.push({ id: 'later', label: '后续排期', items: later })
+    if (done.length) sections.push({ id: 'done', label: '已完成', tone: 'accent', items: done })
+
+    // Only group when items span at least 2 time horizons (keeps single-bucket lists clean)
+    return sections.length > 1 ? sections : null
+  }, [listItems, sortBy, filter, app.now])
+
   const kanbanCols = useMemo(() => {
     return {
       todo: sortItems(baseMatched.filter((w) => w.status === 'todo'), sortBy),
@@ -106,42 +190,15 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
 
   const isExisting = Boolean(editing && app.state.workItems.some((w) => w.id === editing.id))
 
-  const quickCreate = (): void => {
-    if (!text.trim()) return
-    app.saveWork(
-      newWorkItem({
-        title: draft.title,
-        dueAt: draft.dueAt,
-        priority: draft.priority,
-        assignee: draft.assignee,
-        tags: draft.tags,
-        notify: draft.notify,
-        repeat: draft.repeat,
-        notes: draft.notes,
-        sourceText: draft.sourceText
-      })
-    )
-    setText('')
-  }
-
-  const openDraft = (): void => {
-    if (!text.trim()) {
-      setEditing(newWorkItem({}))
-      return
+  const handleDropToCol = (targetCol: WorkStatus): void => {
+    if (draggingId) {
+      const found = app.state.workItems.find((w) => w.id === draggingId)
+      if (found && found.status !== targetCol) {
+        app.setWorkStatus(draggingId, targetCol)
+      }
     }
-    setEditing(
-      newWorkItem({
-        title: draft.title,
-        dueAt: draft.dueAt,
-        priority: draft.priority,
-        assignee: draft.assignee,
-        tags: draft.tags,
-        notify: draft.notify,
-        repeat: draft.repeat,
-        notes: draft.notes,
-        sourceText: draft.sourceText
-      })
-    )
+    setDraggingId(null)
+    setDragOverCol(null)
   }
 
   const renderKanbanCard = (w: WorkItem, col: WorkStatus) => {
@@ -149,35 +206,63 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
     const rel = col !== 'done' ? relativeDaysLabel(w.dueAt, app.now) : null
     const sub = w.subtasks ?? []
     const doneSub = sub.filter((s) => s.done).length
+    const hasBadges = (col !== 'done' && w.priority === 'high') || Boolean(rel) || w.tags.length > 0
+
     return (
       <div
         key={w.id}
-        className={`kanban-card ${overdue ? 'overdue' : ''}`}
+        draggable
+        onDragStart={(e) => {
+          setDraggingId(w.id)
+          e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('text/plain', w.id)
+        }}
+        onDragEnd={() => {
+          setDraggingId(null)
+          setDragOverCol(null)
+        }}
+        className={`kanban-card ${overdue ? 'overdue' : ''} ${draggingId === w.id ? 'dragging' : ''}`}
         onClick={() => setEditing(w)}
       >
-        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 6 }}>
-          {col !== 'done' ? (
-            w.priority === 'high' ? (
-              <span className="tag danger">重点</span>
-            ) : (
-              <span className="tag">一般</span>
-            )
-          ) : null}
-          {rel ? (
-            <span className={`tag ${rel.tone === 'danger' ? 'danger' : rel.tone === 'warn' ? 'warn' : rel.tone === 'accent' ? 'accent' : ''}`}>
-              {rel.text}
-            </span>
-          ) : null}
-          {w.tags.map((t) => (
-            <span key={t} className="tag">#{t}</span>
-          ))}
-        </div>
-        <div style={{ fontWeight: 600, fontSize: 13.5, lineHeight: 1.45, textDecoration: col === 'done' ? 'line-through' : 'none' }}>
+        {hasBadges ? (
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 6 }}>
+            {col !== 'done' && w.priority === 'high' ? <span className="tag danger">重点</span> : null}
+            {rel ? (
+              <span
+                className={`tag ${
+                  rel.tone === 'danger'
+                    ? 'danger'
+                    : rel.tone === 'warn'
+                      ? 'warn'
+                      : rel.tone === 'accent'
+                        ? 'accent'
+                        : ''
+                }`}
+              >
+                {rel.text}
+              </span>
+            ) : null}
+            {w.tags.map((t) => (
+              <span key={t} className="tag">
+                #{t}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div
+          style={{
+            fontWeight: 600,
+            fontSize: 13.5,
+            lineHeight: 1.45,
+            textDecoration: col === 'done' ? 'line-through' : 'none'
+          }}
+        >
           {w.title}
         </div>
         <div className="muted" style={{ marginTop: 5 }}>
           截止 {formatDateCn(w.dueAt)}
-          {sub.length > 0 ? ` · 子步骤 ${doneSub}/${sub.length}` : ''}
+          {w.assignee ? ` · @${w.assignee}` : ''}
+          {sub.length > 0 ? ` · 步骤 ${doneSub}/${sub.length}` : ''}
           {w.focusMinutes ? ` · 专注 ${w.focusMinutes}m` : ''}
         </div>
         <div className="kanban-card-foot" onClick={(e) => e.stopPropagation()}>
@@ -192,7 +277,11 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
                 <button className="mini-btn ghost" onClick={() => app.setWorkStatus(w.id, 'todo')} title="退回待办">
                   <RotateCcw size={11} />
                 </button>
-                <button className="mini-btn" onClick={() => app.startFocus(25, w.id)} title="开启 25 分钟专注">
+                <button
+                  className="mini-btn"
+                  onClick={() => app.startFocus(undefined, w.id)}
+                  title={`开启 ${app.defaultFocusMinutes} 分钟专注`}
+                >
                   <Play size={11} /> 专注
                 </button>
               </>
@@ -217,111 +306,74 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
     )
   }
 
+  const workListCommonProps = {
+    now: app.now,
+    onToggle: (w: WorkItem) => app.toggleWork(w),
+    onOpen: setEditing,
+    onDelete: (w: WorkItem) => app.deleteWork(w.id),
+    onStartFocus: (w: WorkItem) => app.startFocus(undefined, w.id),
+    onTogglePin: (id: string) => app.togglePinWork(id),
+    onToggleSubtask: (wId: string, sId: string) => app.toggleSubtask(wId, sId),
+    onAddSubtask: (wId: string, title: string) => app.addSubtask(wId, title),
+    onCycleDoing: (w: WorkItem) => app.setWorkStatus(w.id, w.status === 'doing' ? 'todo' : 'doing'),
+    onPostponeOneDay: (w: WorkItem) => app.postponeWorkItem(w.id, 1),
+    onTagClick: (t: string) => setActiveTag((cur) => (cur === t ? null : t))
+  }
+
+  const hasActiveFilter = Boolean(query.trim() || activeTag)
+
   return (
     <>
       <PageHead
         title="工作事项"
-        sub="支持自然语言快速录入、标签筛选、子步骤拆解，以及列表 / 看板双视图切换。"
+        sub="自然语言快速排期、按时间轴分组扫描，支持列表与可拖拽看板双视图。"
         right={
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <button
-              className="chip"
+              className="btn ghost small"
               onClick={() => setExcelOpen(true)}
               title="按标准模板导出本月完成情况与下月计划 Excel (.xlsx)"
             >
               <FileSpreadsheet size={13} color="var(--forest)" /> 导出 Excel
             </button>
-            <button
-              className={`chip ${view === 'list' ? 'on' : ''}`}
-              onClick={() => setView('list')}
-            >
-              <LayoutList size={13} /> 列表视图
-            </button>
-            <button
-              className={`chip ${view === 'kanban' ? 'on' : ''}`}
-              onClick={() => setView('kanban')}
-            >
-              <Columns3 size={13} /> 看板视图
-            </button>
+            <div className="seg-tabs">
+              <button type="button" className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>
+                <LayoutList size={12} /> 列表
+              </button>
+              <button type="button" className={view === 'kanban' ? 'on' : ''} onClick={() => setView('kanban')}>
+                <Columns3 size={12} /> 看板
+              </button>
+            </div>
           </div>
         }
       />
 
-      <div className="card composer-card" style={{ marginBottom: 16 }}>
-        <div className="composer">
-          <div className="composer-input-wrap">
-            <Sparkles size={15} className="composer-icon" />
-            <input
-              data-quick-composer="true"
-              value={text}
-              placeholder="例如：任务：整理财务月报 截止2026年12月31日 从今天开始每天早上10点提醒我一次 #财务 重点"
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                  e.preventDefault()
-                  openDraft()
-                } else if (e.key === 'Enter') {
-                  e.preventDefault()
-                  quickCreate()
-                }
-              }}
-            />
-          </div>
-          <button className="btn" onClick={quickCreate}>极速创建</button>
-          <button className="btn ghost" onClick={openDraft}>
-            <SlidersHorizontal size={14} />
-            详细配置
-          </button>
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={() => setShowSyntax((v) => !v)}
-          >
-            <HelpCircle size={14} />
-            {showSyntax ? '收起语法' : '语法说明'}
-          </button>
-        </div>
-        {text.trim() ? (
-          <div className="parsed-preview">
-            <div className="parsed-tokens">
-              <span className="tag primary">识别结果</span>
-              <span>{describeDraft(draft)}</span>
-            </div>
-            {draft.hints.length ? <span className="muted">{draft.hints.join('；')}</span> : null}
-          </div>
-        ) : (
-          <p className="muted" style={{ margin: '9px 0 0' }}>
-            支持长句与简写：任务：标题 · 截止12月31日 / 明天 / 下周三 · 从今天开始 / 提前5天 · 每天早上10点提醒我一次 · #标签 · 重点 / 一般 · @责任人
-          </p>
-        )}
-        {showSyntax ? (
-          <div className="syntax-guide">
-            {WORK_SYNTAX_GUIDE.map((g) => (
-              <div key={g.category} className="syntax-item">
-                <b>{g.category}</b>
-                <span>{g.patterns}</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </div>
+      <QuickComposer
+        app={app}
+        compact
+        onOpenDetailed={(draftItem, clearInput) => {
+          clearComposerRef.current = clearInput
+          setEditing(draftItem)
+        }}
+      />
 
       <div className="work-toolbar">
         {view === 'list' ? (
-          <div className="filters" style={{ marginBottom: 0 }}>
+          <div className="seg-tabs">
             {(
               [
                 ['open', `未完成 (${app.stats.open})`],
                 ['doing', `进行中 (${app.stats.doing})`],
-                ['today', `今日到期 (${app.stats.dueToday})`],
-                ['overdue', app.stats.overdue > 0 ? `已逾期 (${app.stats.overdue})` : '已逾期'],
+                ['today', `今日 (${app.stats.dueToday})`],
+                ['overdue', app.stats.overdue > 0 ? `逾期 (${app.stats.overdue})` : '逾期'],
                 ['done', `已完成 (${app.stats.done})`],
                 ['all', '全部']
               ] as const
             ).map(([id, label]) => (
               <button
                 key={id}
-                className={`chip ${filter === id ? 'on' : ''}`}
+                type="button"
+                className={filter === id ? 'on' : ''}
                 onClick={() => setFilter(id)}
               >
                 {label}
@@ -329,25 +381,18 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
             ))}
           </div>
         ) : (
-          <div className="muted">点击卡片可编辑子任务与提醒规则，底部按钮可一键流转状态。</div>
+          <div className="muted">可直接拖拽卡片跨列流转状态，点击卡片可编辑子步骤与提醒规则。</div>
         )}
 
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <select
+            className="toolbar-select"
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as SortBy)}
-            style={{
-              border: '1px solid var(--line-strong)',
-              background: 'var(--input-bg)',
-              color: 'var(--ink)',
-              borderRadius: 9,
-              padding: '6px 10px',
-              fontSize: 12
-            }}
           >
-            <option value="due">按截止时间排序</option>
-            <option value="priority">按优先级排序</option>
-            <option value="created">按最新创建排序</option>
+            <option value="due">按截止分组</option>
+            <option value="priority">按优先级</option>
+            <option value="created">按最新创建</option>
           </select>
 
           <div className="search-wrap">
@@ -356,7 +401,7 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
               className="search-bar"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索标题、标签、子任务..."
+              placeholder="搜索标题、标签、责任人..."
             />
             {query ? (
               <button className="search-clear" onClick={() => setQuery('')} title="清空搜索">
@@ -367,15 +412,23 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
         </div>
       </div>
 
-      {(allTags.length > 0 || app.stats.overdue > 0 || app.stats.done > 0) ? (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+      {allTags.length > 0 || app.stats.overdue > 0 || app.stats.done > 0 ? (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 8,
+            flexWrap: 'wrap',
+            marginBottom: 14
+          }}
+        >
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             {allTags.length > 0 ? (
               <>
                 <span className="muted">标签：</span>
                 <button
-                  className={`sample-pill ${activeTag === null ? 'on' : ''}`}
-                  style={activeTag === null ? { borderColor: 'var(--primary)', color: 'var(--primary)', borderStyle: 'solid' } : undefined}
+                  className={`sample-pill ${activeTag === null ? 'active' : ''}`}
                   onClick={() => setActiveTag(null)}
                 >
                   全部
@@ -383,8 +436,7 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
                 {allTags.map((t) => (
                   <button
                     key={t}
-                    className="sample-pill"
-                    style={activeTag === t ? { borderColor: 'var(--primary)', color: 'var(--primary)', borderStyle: 'solid' } : undefined}
+                    className={`sample-pill ${activeTag === t ? 'active' : ''}`}
                     onClick={() => setActiveTag(activeTag === t ? null : t)}
                   >
                     #{t}
@@ -394,7 +446,19 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
             ) : null}
           </div>
 
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {hasActiveFilter ? (
+              <button
+                className="btn ghost small"
+                onClick={() => {
+                  setQuery('')
+                  setActiveTag(null)
+                }}
+              >
+                <X size={12} />
+                清除筛选
+              </button>
+            ) : null}
             {app.stats.overdue > 0 ? (
               <button className="btn ghost small" onClick={() => app.postponeOverdue(1)}>
                 <FastForward size={12} />
@@ -413,48 +477,116 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
 
       {view === 'list' ? (
         <div className="card">
-          <WorkList
-            items={listItems}
-            now={app.now}
-            empty={query.trim() || activeTag ? '没有匹配筛选条件的工作项。' : '当前列表为空。'}
-            onToggle={(w) => app.toggleWork(w)}
-            onOpen={setEditing}
-            onDelete={(w) => app.deleteWork(w.id)}
-            onStartFocus={(w) => app.startFocus(25, w.id)}
-            onTogglePin={(id) => app.togglePinWork(id)}
-            onToggleSubtask={(wId, sId) => app.toggleSubtask(wId, sId)}
-            onCycleDoing={(w) => app.setWorkStatus(w.id, w.status === 'doing' ? 'todo' : 'doing')}
-          />
+          {groupedSections ? (
+            <div className="work-groups">
+              {groupedSections.map((sec) => (
+                <section key={sec.id} className="work-group">
+                  <div className="work-group-head">
+                    <span className={`work-group-title ${sec.tone ?? ''}`}>{sec.label}</span>
+                    <span className={`tag ${sec.tone ?? ''}`}>{sec.items.length}</span>
+                  </div>
+                  <WorkList items={sec.items} empty="" {...workListCommonProps} />
+                </section>
+              ))}
+            </div>
+          ) : (
+            <WorkList
+              items={listItems}
+              empty={
+                hasActiveFilter
+                  ? '没有匹配当前筛选条件的工作项。'
+                  : '当前列表为空，按 N 在上方输入一句话即可快速创建。'
+              }
+              emptyAction={
+                hasActiveFilter
+                  ? {
+                      label: '清除筛选条件',
+                      onClick: () => {
+                        setQuery('')
+                        setActiveTag(null)
+                      }
+                    }
+                  : app.state.workItems.length === 0
+                    ? { label: '导入 3 条体验示例', onClick: app.loadDemoWork }
+                    : undefined
+              }
+              {...workListCommonProps}
+            />
+          )}
         </div>
       ) : (
         <div className="kanban-grid">
-          <div className="kanban-col">
-            <div className="kanban-col-head">
-              <span>待办事项</span>
-              <span className="tag">{kanbanCols.todo.length}</span>
+          {(
+            [
+              {
+                id: 'todo' as const,
+                label: '待办事项',
+                tone: '',
+                badgeTone: '',
+                items: kanbanCols.todo,
+                emptyText: '暂无待办，可将卡片拖入此列'
+              },
+              {
+                id: 'doing' as const,
+                label: '推进中',
+                tone: 'var(--primary)',
+                badgeTone: 'primary',
+                items: kanbanCols.doing,
+                emptyText: '拖入事项开始推进'
+              },
+              {
+                id: 'done' as const,
+                label: '已完成（近 20 条）',
+                tone: 'var(--forest)',
+                badgeTone: 'accent',
+                items: kanbanCols.done,
+                emptyText: '拖入事项标记完成'
+              }
+            ]
+          ).map((col) => (
+            <div
+              key={col.id}
+              className={`kanban-col ${dragOverCol === col.id ? 'drag-over' : ''}`}
+              onDragOver={(e) => {
+                e.preventDefault()
+                if (dragOverCol !== col.id) setDragOverCol(col.id)
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                  setDragOverCol((prev) => (prev === col.id ? null : prev))
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                handleDropToCol(col.id)
+              }}
+            >
+              <div className="kanban-col-head">
+                <span style={col.tone ? { color: col.tone } : undefined}>{col.label}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {col.id === 'todo' ? (
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      style={{ width: 22, height: 22 }}
+                      title="新建待办事项"
+                      onClick={() => setEditing(newWorkItem({ status: 'todo' }))}
+                    >
+                      <Plus size={13} />
+                    </button>
+                  ) : null}
+                  <span className={`tag ${col.badgeTone}`}>{col.items.length}</span>
+                </div>
+              </div>
+              <div className="kanban-cards">
+                {col.items.length ? (
+                  col.items.map((w) => renderKanbanCard(w, col.id))
+                ) : (
+                  <div className="empty">{col.emptyText}</div>
+                )}
+              </div>
             </div>
-            <div className="kanban-cards">
-              {kanbanCols.todo.length ? kanbanCols.todo.map((w) => renderKanbanCard(w, 'todo')) : <div className="empty">暂无待办</div>}
-            </div>
-          </div>
-          <div className="kanban-col">
-            <div className="kanban-col-head">
-              <span style={{ color: 'var(--primary)' }}>推进中</span>
-              <span className="tag primary">{kanbanCols.doing.length}</span>
-            </div>
-            <div className="kanban-cards">
-              {kanbanCols.doing.length ? kanbanCols.doing.map((w) => renderKanbanCard(w, 'doing')) : <div className="empty">暂无进行中事项</div>}
-            </div>
-          </div>
-          <div className="kanban-col">
-            <div className="kanban-col-head">
-              <span style={{ color: 'var(--forest)' }}>已完成（最近 20 条）</span>
-              <span className="tag accent">{kanbanCols.done.length}</span>
-            </div>
-            <div className="kanban-cards">
-              {kanbanCols.done.length ? kanbanCols.done.map((w) => renderKanbanCard(w, 'done')) : <div className="empty">暂无已完成</div>}
-            </div>
-          </div>
+          ))}
         </div>
       )}
 
@@ -466,7 +598,8 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
           onSave={(item) => {
             app.saveWork(item)
             setEditing(null)
-            setText('')
+            clearComposerRef.current?.()
+            clearComposerRef.current = null
           }}
           onDelete={
             isExisting
@@ -478,11 +611,7 @@ export default function WorkPage({ app }: { app: ReturnType<typeof useAppState> 
           }
         />
       ) : null}
-      <ExportExcelModal
-        open={excelOpen}
-        app={app}
-        onClose={() => setExcelOpen(false)}
-      />
+      <ExportExcelModal open={excelOpen} app={app} onClose={() => setExcelOpen(false)} />
     </>
   )
 }

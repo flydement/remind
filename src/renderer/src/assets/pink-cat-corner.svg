@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" fill="none">
+  <defs>
+    <linearGradient id="crFur" x1="80" y1="30" x2="80" y2="144" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#FFF0F6"/>
+    </linearGradient>
+    <linearGradient id="crBow" x1="0" y1="0" x2="26" y2="16" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF78AC"/>
+      <stop offset="100%" stop-color="#EE4281"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Soft shadow cushion -->
+  <ellipse cx="82" cy="144" rx="50" ry="10" fill="#F4A4C4" opacity="0.4"/>
+
+  <!-- Curled Tail -->
+  <path d="M108 134 C136 134 144 108 130 98 C122 92 114 98 119 105 C124 111 131 107 129 116 C127 124 118 126 110 125" fill="none" stroke="#5C2641" stroke-width="9" stroke-linecap="round"/>
+  <path d="M108 134 C136 134 144 108 130 98 C122 92 114 98 119 105 C124 111 131 107 129 116 C127 124 118 126 110 125" fill="none" stroke="#FFF4F8" stroke-width="4.6" stroke-linecap="round"/>
+
+  <!-- Floating Heart & Sparkle -->
+  <path d="M36 44 C36 39 29 37 27 42 C25 37 18 39 18 44 C18 50 27 56 27 56 C27 56 36 50 36 44 Z" fill="#FF73A8" opacity="0.9"/>
+  <path d="M132 34 L134 28 L136 34 L142 36 L136 38 L134 44 L132 38 L126 36 Z" fill="#FFB93E"/>
+
+  <!-- Sitting Chubby Body -->
+  <path d="M44 132 C42 104 54 88 80 88 C106 88 118 104 116 132 C115 142 104 146 80 146 C56 146 45 142 44 132 Z" fill="url(#crFur)" stroke="#5C2641" stroke-width="3.2" stroke-linejoin="round"/>
+  <!-- Soft Pink Belly -->
+  <ellipse cx="80" cy="122" rx="20" ry="16" fill="#FFE2EE"/>
+
+  <!-- Ears -->
+  <path d="M48 64 C43 44 48 31 56 30 C64 29 71 39 74 48 Z" fill="url(#crFur)" stroke="#5C2641" stroke-width="3.2" stroke-linejoin="round"/>
+  <path d="M52 58 C49 47 52 38 56 37 C61 37 66 43 69 49 Z" fill="#FFA8CA"/>
+
+  <path d="M112 64 C117 44 112 31 104 30 C96 29 89 39 86 48 Z" fill="url(#crFur)" stroke="#5C2641" stroke-width="3.2" stroke-linejoin="round"/>
+  <path d="M108 58 C111 47 108 38 104 37 C99 37 94 43 91 49 Z" fill="#FFA8CA"/>
+
+  <!-- Head -->
+  <path d="M42 74 C42 52 57 42 80 42 C103 42 118 52 118 74 C118 94 103 103 80 103 C57 103 42 94 42 74 Z" fill="url(#crFur)" stroke="#5C2641" stroke-width="3.2" stroke-linejoin="round"/>
+
+  <!-- Forehead stripes -->
+  <path d="M73 44 V50 M80 43 V52 M87 44 V50" stroke="#FF97C0" stroke-width="2.8" stroke-linecap="round"/>
+
+  <!-- Pink Ribbon Bow -->
+  <g transform="translate(101, 41) rotate(16)">
+    <path d="M-2 0 C-9 -7 -16 -5 -15 2 C-14 7 -7 7 -2 2 Z" fill="url(#crBow)" stroke="#5C2641" stroke-width="2.2" stroke-linejoin="round"/>
+    <path d="M2 0 C9 -7 16 -5 15 2 C14 7 7 7 2 2 Z" fill="url(#crBow)" stroke="#5C2641" stroke-width="2.2" stroke-linejoin="round"/>
+    <circle cx="0" cy="1" r="3.9" fill="#FF4B8B" stroke="#5C2641" stroke-width="2"/>
+  </g>
+
+  <!-- Joyful Curved Smiling Eyes (^ ^) -->
+  <path d="M58 72 C61 66 67 66 70 72" stroke="#4B1D35" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M90 72 C93 66 99 66 102 72" stroke="#4B1D35" stroke-width="3.2" stroke-linecap="round"/>
+
+  <!-- Cheeks, Nose, Smile -->
+  <ellipse cx="54" cy="80" rx="7.5" ry="4.4" fill="#FF89B7" opacity="0.6"/>
+  <ellipse cx="106" cy="80" rx="7.5" ry="4.4" fill="#FF89B7" opacity="0.6"/>
+  <path d="M77.8 77.5 C77.8 76 82.2 76 82.2 77.5 C82.2 79 80 80.5 80 80.5 C80 80.5 77.8 79 77.8 77.5 Z" fill="#FF669B"/>
+  <path d="M73 83 C74.5 86.2 78.6 86 80 83.2 C81.4 86 85.5 86.2 87 83" stroke="#5C2641" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Whiskers -->
+  <path d="M33 74 L44 76 M32 81 L43 80" stroke="#6E3552" stroke-width="2" stroke-linecap="round"/>
+  <path d="M127 74 L116 76 M128 81 L117 80" stroke="#6E3552" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Collar & Bell -->
+  <path d="M62 101 C72 106 88 106 98 101" stroke="#F04E88" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="80" cy="107" r="5.6" fill="#FFD35A" stroke="#5C2641" stroke-width="2.2"/>
+
+  <!-- Little Holding Paws + Pink Heart -->
+  <path d="M89 124 C89 119 82 117 80 122 C78 117 71 119 71 124 C71 130 80 136 80 136 C80 136 89 130 89 124 Z" fill="#FF69A1" stroke="#5C2641" stroke-width="2.1" stroke-linejoin="round"/>
+  <ellipse cx="64" cy="126" rx="9" ry="7.5" fill="#FFFFFF" stroke="#5C2641" stroke-width="2.8"/>
+  <ellipse cx="96" cy="126" rx="9" ry="7.5" fill="#FFFFFF" stroke="#5C2641" stroke-width="2.8"/>
+
+  <!-- Bottom Sitting Feet -->
+  <ellipse cx="58" cy="143" rx="11" ry="7.5" fill="#FFFFFF" stroke="#5C2641" stroke-width="2.8"/>
+  <ellipse cx="58" cy="144" rx="4.2" ry="2.8" fill="#FFA6C9"/>
+  <ellipse cx="102" cy="143" rx="11" ry="7.5" fill="#FFFFFF" stroke="#5C2641" stroke-width="2.8"/>
+  <ellipse cx="102" cy="144" rx="4.2" ry="2.8" fill="#FFA6C9"/>
+</svg>

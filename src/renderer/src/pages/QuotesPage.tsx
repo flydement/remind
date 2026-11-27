@@ -1,19 +1,48 @@
 import { useMemo, useState } from 'react'
-import { MessageSquarePlus, Search, Shuffle, Trash2, X } from 'lucide-react'
+import { Check, Copy, MessageSquarePlus, Plus, RotateCcw, Search, Shuffle, Trash2, X } from 'lucide-react'
 import type { QuoteItem, QuoteKind, QuoteSettings } from '@shared/types'
+import { mergeBuiltinQuotes, QUOTES_CATALOG_VERSION, SAMPLE_QUOTES } from '@shared/defaults'
 import { createId } from '@shared/ids'
 import { nowIso } from '@shared/time'
 import PageHead from '../components/PageHead'
 import { KIND_LABEL } from '../kindLabel'
 import type { useAppState } from '../state'
 
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // fallback below
+  }
+  try {
+    const el = document.createElement('textarea')
+    el.value = text
+    el.style.position = 'fixed'
+    el.style.opacity = '0'
+    document.body.appendChild(el)
+    el.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(el)
+    return ok
+  } catch {
+    return false
+  }
+}
+
 export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState> }) {
   const s = app.state.quoteSettings
   const today = app.state.quotes.find((q) => q.id === s.lastQuoteId) ?? app.state.quotes.find((q) => q.enabled)
   const [showAnswer, setShowAnswer] = useState(false)
+  const [copiedHero, setCopiedHero] = useState(false)
+  const [copiedRowId, setCopiedRowId] = useState<string | null>(null)
   const [tab, setTab] = useState<'schedule' | 'library'>('schedule')
+  const [adding, setAdding] = useState(false)
   const [kindFilter, setKindFilter] = useState<'all' | QuoteKind>('all')
   const [search, setSearch] = useState('')
+  const [visibleLimit, setVisibleLimit] = useState(40)
   const [newKind, setNewKind] = useState<QuoteKind>('motivation')
   const [newContent, setNewContent] = useState('')
   const [newAnswer, setNewAnswer] = useState('')
@@ -51,6 +80,23 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
     })
   }
 
+  const handleCopyHero = async (): Promise<void> => {
+    if (!today) return
+    const text = today.answer ? `${today.content}\n答案：${today.answer}` : today.content
+    if (await copyToClipboard(text)) {
+      setCopiedHero(true)
+      window.setTimeout(() => setCopiedHero(false), 1800)
+    }
+  }
+
+  const handleCopyRow = async (q: QuoteItem): Promise<void> => {
+    const text = q.answer ? `${q.content}\n答案：${q.answer}` : q.content
+    if (await copyToClipboard(text)) {
+      setCopiedRowId(q.id)
+      window.setTimeout(() => setCopiedRowId((cur) => (cur === q.id ? null : cur)), 1600)
+    }
+  }
+
   const addQuote = (): void => {
     if (!newContent.trim()) return
     const item: QuoteItem = {
@@ -63,6 +109,58 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
     app.patch((st) => ({ ...st, quotes: [item, ...st.quotes] }))
     setNewContent('')
     setNewAnswer('')
+    setAdding(false)
+    app.setFlash({
+      id: createId('fl'),
+      title: '已添加新词条',
+      body: `已加入「${KIND_LABEL[item.kind]}」推送池。`,
+      source: 'quote'
+    })
+  }
+
+  const deleteQuote = (q: QuoteItem): void => {
+    app.patch((st) => ({
+      ...st,
+      quotes: st.quotes.filter((x) => x.id !== q.id)
+    }))
+    app.setFlash({
+      id: createId('fl'),
+      title: '已删除词条',
+      body: q.content.slice(0, 32),
+      source: 'info',
+      actionLabel: '撤销',
+      onAction: () => {
+        app.patch((st) => ({ ...st, quotes: [q, ...st.quotes] }))
+        app.setFlash(null)
+      }
+    })
+  }
+
+  const kindCounts = useMemo(() => {
+    const counts: Record<QuoteKind, number> = { motivation: 0, riddle: 0, joke: 0 }
+    for (const item of app.state.quotes) counts[item.kind]++
+    return counts
+  }, [app.state.quotes])
+
+  const missingBuiltinCount = useMemo(() => {
+    const existing = new Set(app.state.quotes.map((q) => q.content.trim()))
+    return SAMPLE_QUOTES.filter((q) => !existing.has(q.content.trim())).length
+  }, [app.state.quotes])
+
+  const restoreBuiltinQuotes = (): void => {
+    const { quotes: merged, added } = mergeBuiltinQuotes(app.state.quotes)
+    if (!added) return
+    app.patch((st) => ({
+      ...st,
+      quotes: merged,
+      quoteSettings: { ...st.quoteSettings, catalogVersion: QUOTES_CATALOG_VERSION }
+    }))
+    app.setFlash({
+      id: createId('fl'),
+      title: `已补全 ${added} 条内置词条`,
+      body: `当前文库共 ${merged.length} 条词条。`,
+      source: 'quote'
+    })
   }
 
   const filteredQuotes = useMemo(() => {
@@ -81,41 +179,69 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
     <>
       <PageHead
         title="语言文库"
-        sub="定时推送工作寄语、思维问答或轻松短句，支持在此直接检索、筛选与扩充词条。"
+        sub="定时推送工作寄语、思维问答或轻松短句，支持一键复制、筛选检索与扩充词条。"
         right={
-          <button className="btn small" onClick={pushNow}>
-            <Shuffle size={13} />
-            随机抽取并推送
-          </button>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button
+              className="btn ghost small"
+              onClick={() => {
+                setTab('library')
+                setAdding((v) => !v)
+              }}
+            >
+              <Plus size={13} />
+              新增词条
+            </button>
+            <button className="btn small" onClick={pushNow}>
+              <Shuffle size={13} />
+              随机抽取并推送
+            </button>
+          </div>
         }
       />
 
       {today ? (
         <div className="card quote-hero" style={{ marginBottom: 18 }}>
-          <div className="quote-kind">当前卡片 · {KIND_LABEL[today.kind]}</div>
+          <div className="section-head" style={{ marginBottom: 4 }}>
+            <div className="quote-kind">当前卡片 · {KIND_LABEL[today.kind]}</div>
+            <button
+              type="button"
+              className="icon-btn"
+              title="复制当前句"
+              onClick={() => void handleCopyHero()}
+            >
+              {copiedHero ? <Check size={14} color="var(--forest)" /> : <Copy size={13} />}
+            </button>
+          </div>
           <p className="quote-body">{today.content}</p>
           {today.answer ? (
             <div style={{ marginTop: 12 }}>
               {showAnswer ? (
                 <p className="muted" style={{ margin: 0 }}>
                   答案：{today.answer}{' '}
-                  <button className="riddle-btn" onClick={() => setShowAnswer(false)}>隐藏</button>
+                  <button className="riddle-btn" onClick={() => setShowAnswer(false)}>
+                    隐藏
+                  </button>
                 </p>
               ) : (
-                <button className="riddle-btn" onClick={() => setShowAnswer(true)}>查看答案</button>
+                <button className="riddle-btn" onClick={() => setShowAnswer(true)}>
+                  查看答案
+                </button>
               )}
             </div>
           ) : null}
         </div>
       ) : null}
 
-      <div className="filters">
-        <button className={`chip ${tab === 'schedule' ? 'on' : ''}`} onClick={() => setTab('schedule')}>
-          推送计划配置
-        </button>
-        <button className={`chip ${tab === 'library' ? 'on' : ''}`} onClick={() => setTab('library')}>
-          管理词条库（{app.state.quotes.length} 条）
-        </button>
+      <div style={{ marginBottom: 14 }}>
+        <div className="seg-tabs">
+          <button type="button" className={tab === 'schedule' ? 'on' : ''} onClick={() => setTab('schedule')}>
+            推送计划配置
+          </button>
+          <button type="button" className={tab === 'library' ? 'on' : ''} onClick={() => setTab('library')}>
+            管理词条库（{app.state.quotes.length} 条）
+          </button>
+        </div>
       </div>
 
       {tab === 'schedule' ? (
@@ -134,10 +260,16 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
           <div className="field" style={{ marginTop: 12 }}>
             <label>推送模式</label>
             <div className="filters" style={{ margin: 0 }}>
-              <button className={`chip ${s.frequency === 'once' ? 'on' : ''}`} onClick={() => patchSchedule({ frequency: 'once' }, true)}>
+              <button
+                className={`chip ${s.frequency === 'once' ? 'on' : ''}`}
+                onClick={() => patchSchedule({ frequency: 'once' }, true)}
+              >
                 每日固定时间
               </button>
-              <button className={`chip ${s.frequency === 'interval' ? 'on' : ''}`} onClick={() => patchSchedule({ frequency: 'interval' }, true)}>
+              <button
+                className={`chip ${s.frequency === 'interval' ? 'on' : ''}`}
+                onClick={() => patchSchedule({ frequency: 'interval' }, true)}
+              >
                 时段内按间隔循环
               </button>
             </div>
@@ -175,15 +307,26 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
             <div className="form-grid">
               <div className="field">
                 <label>时段开始</label>
-                <input type="time" value={s.windowStart} onChange={(e) => patchSchedule({ windowStart: e.target.value || '08:00' })} />
+                <input
+                  type="time"
+                  value={s.windowStart}
+                  onChange={(e) => patchSchedule({ windowStart: e.target.value || '08:00' })}
+                />
               </div>
               <div className="field">
                 <label>时段结束</label>
-                <input type="time" value={s.windowEnd} onChange={(e) => patchSchedule({ windowEnd: e.target.value || '21:00' })} />
+                <input
+                  type="time"
+                  value={s.windowEnd}
+                  onChange={(e) => patchSchedule({ windowEnd: e.target.value || '21:00' })}
+                />
               </div>
               <div className="field">
                 <label>推送间隔</label>
-                <select value={s.intervalMinutes} onChange={(e) => patchSchedule({ intervalMinutes: Number(e.target.value) })}>
+                <select
+                  value={s.intervalMinutes}
+                  onChange={(e) => patchSchedule({ intervalMinutes: Number(e.target.value) })}
+                >
                   <option value={15}>15 分钟</option>
                   <option value={30}>30 分钟</option>
                   <option value={60}>60 分钟</option>
@@ -212,65 +355,113 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
         </div>
       ) : (
         <>
-          <div className="card" style={{ marginBottom: 16 }}>
-            <h3><MessageSquarePlus size={15} color="var(--primary)" /> 新增自定义词条</h3>
-            <div className="form-grid">
-              <div className="field">
-                <label>分类</label>
-                <select value={newKind} onChange={(e) => setNewKind(e.target.value as QuoteKind)}>
-                  <option value="motivation">激励寄语（鸡血）</option>
-                  <option value="riddle">脑筋急转弯</option>
-                  <option value="joke">轻松幽默</option>
-                </select>
+          {adding ? (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="section-head">
+                <h3>
+                  <MessageSquarePlus size={15} color="var(--primary)" /> 新增自定义词条
+                </h3>
+                <button className="icon-btn" onClick={() => setAdding(false)} title="收起">
+                  <X size={14} />
+                </button>
               </div>
-              <div className="field">
-                <label>谜底 / 备注答案（可选）</label>
-                <input value={newAnswer} onChange={(e) => setNewAnswer(e.target.value)} placeholder="非问答类可留空" />
+              <div className="form-grid" style={{ marginTop: 4 }}>
+                <div className="field">
+                  <label>分类</label>
+                  <select value={newKind} onChange={(e) => setNewKind(e.target.value as QuoteKind)}>
+                    <option value="motivation">激励寄语</option>
+                    <option value="riddle">思维问答</option>
+                    <option value="joke">轻松幽默</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label>谜底 / 备注答案（可选）</label>
+                  <input value={newAnswer} onChange={(e) => setNewAnswer(e.target.value)} placeholder="非问答类可留空" />
+                </div>
+              </div>
+              <div className="field" style={{ marginTop: 10 }}>
+                <label>正文内容</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    value={newContent}
+                    onChange={(e) => setNewContent(e.target.value)}
+                    placeholder="输入一句格言、工作准则或趣味问答，按回车保存..."
+                    onKeyDown={(e) => e.key === 'Enter' && addQuote()}
+                  />
+                  <button className="btn" onClick={addQuote}>
+                    添加入库
+                  </button>
+                </div>
               </div>
             </div>
-            <div className="field" style={{ marginTop: 10 }}>
-              <label>正文内容</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  value={newContent}
-                  onChange={(e) => setNewContent(e.target.value)}
-                  placeholder="输入一句格言、工作准则或趣味问答，按回车保存..."
-                  onKeyDown={(e) => e.key === 'Enter' && addQuote()}
-                />
-                <button className="btn" onClick={addQuote}>添加入库</button>
-              </div>
-            </div>
-          </div>
+          ) : null}
 
           <div className="work-toolbar">
             <div className="filters" style={{ marginBottom: 0 }}>
-              <button className={`chip ${kindFilter === 'all' ? 'on' : ''}`} onClick={() => setKindFilter('all')}>全部</button>
+              <button
+                className={`chip ${kindFilter === 'all' ? 'on' : ''}`}
+                onClick={() => {
+                  setKindFilter('all')
+                  setVisibleLimit(40)
+                }}
+              >
+                全部 ({app.state.quotes.length})
+              </button>
               {(Object.keys(KIND_LABEL) as QuoteKind[]).map((k) => (
-                <button key={k} className={`chip ${kindFilter === k ? 'on' : ''}`} onClick={() => setKindFilter(k)}>
-                  {KIND_LABEL[k]}
+                <button
+                  key={k}
+                  className={`chip ${kindFilter === k ? 'on' : ''}`}
+                  onClick={() => {
+                    setKindFilter(k)
+                    setVisibleLimit(40)
+                  }}
+                >
+                  {KIND_LABEL[k]} ({kindCounts[k]})
                 </button>
               ))}
             </div>
-            <div className="search-wrap">
-              <Search size={14} className="search-icon" />
-              <input
-                className="search-bar"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="检索文库内容..."
-              />
-              {search ? (
-                <button className="search-clear" onClick={() => setSearch('')}>
-                  <X size={13} />
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              {missingBuiltinCount > 0 ? (
+                <button
+                  type="button"
+                  className="btn ghost small"
+                  onClick={restoreBuiltinQuotes}
+                  title="补充尚未收录或曾被删除的内置词条"
+                >
+                  <RotateCcw size={12} />
+                  补全内置词条 (+{missingBuiltinCount})
                 </button>
               ) : null}
+              <div className="search-wrap">
+                <Search size={14} className="search-icon" />
+                <input
+                  className="search-bar"
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value)
+                    setVisibleLimit(40)
+                  }}
+                  placeholder="检索文库内容..."
+                />
+                {search ? (
+                  <button
+                    className="search-clear"
+                    onClick={() => {
+                      setSearch('')
+                      setVisibleLimit(40)
+                    }}
+                  >
+                    <X size={13} />
+                  </button>
+                ) : null}
+              </div>
             </div>
           </div>
 
           <div className="card">
             <div className="work-list">
               {filteredQuotes.length ? (
-                filteredQuotes.map((q) => (
+                filteredQuotes.slice(0, visibleLimit).map((q) => (
                   <div className={`work ${q.enabled ? '' : 'done'}`} key={q.id}>
                     <button
                       className={`check ${q.enabled ? 'on' : ''}`}
@@ -283,30 +474,47 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
                       }
                     />
                     <div>
-                      <p className="title" style={{ textDecoration: 'none' }}>{q.content}</p>
+                      <p className="title" style={{ textDecoration: 'none' }}>
+                        {q.content}
+                      </p>
                       <p className="meta">
                         <span className="tag">{KIND_LABEL[q.kind]}</span>
                         <span>{q.answer ? `答案：${q.answer}` : q.enabled ? '已加入推送池' : '已停用'}</span>
                       </p>
                     </div>
-                    <button
-                      className="icon-btn"
-                      title="删除词条"
-                      onClick={() =>
-                        app.patch((st) => ({
-                          ...st,
-                          quotes: st.quotes.filter((x) => x.id !== q.id)
-                        }))
-                      }
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    <div className="work-actions">
+                      <button
+                        className={`icon-btn ${copiedRowId === q.id ? 'active' : 'hover-reveal'}`}
+                        title={copiedRowId === q.id ? '已复制' : '复制词条'}
+                        onClick={() => void handleCopyRow(q)}
+                      >
+                        {copiedRowId === q.id ? <Check size={13} color="var(--forest)" /> : <Copy size={13} />}
+                      </button>
+                      <button
+                        className="icon-btn hover-reveal"
+                        title="删除词条（支持撤销）"
+                        onClick={() => deleteQuote(q)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
                 ))
               ) : (
                 <div className="empty">没有匹配的文库词条。</div>
               )}
             </div>
+            {filteredQuotes.length > visibleLimit ? (
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: 14 }}>
+                <button
+                  type="button"
+                  className="btn ghost small"
+                  onClick={() => setVisibleLimit((n) => n + 40)}
+                >
+                  展开更多（已显示 {visibleLimit} / {filteredQuotes.length} 条）
+                </button>
+              </div>
+            ) : null}
           </div>
         </>
       )}
