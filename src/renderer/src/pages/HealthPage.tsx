@@ -207,12 +207,12 @@ export default function HealthPage({ app }: { app: ReturnType<typeof useAppState
 
             return (
               <div className={`card health-card ${h.enabled ? 'active' : 'paused'}`} key={h.id}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div className="health-card-head">
+                  <div className="health-card-info">
                     <div className="emoji-badge">{h.emoji}</div>
-                    <div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
                       <h3 style={{ margin: 0 }}>{h.title}</h3>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                      <div className="health-card-meta">
                         <span className={`tag ${h.enabled ? 'accent' : ''}`}>
                           {!h.enabled
                             ? '已暂停'
@@ -226,52 +226,54 @@ export default function HealthPage({ app }: { app: ReturnType<typeof useAppState
                       </div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    {h.enabled ? (
+                  <div className="health-card-controls">
+                    <div className="health-card-tools">
+                      {h.enabled ? (
+                        <button
+                          className="btn ghost small"
+                          title="已完成休息，重置本轮计时"
+                          onClick={() => checkInNow(h)}
+                        >
+                          <CheckCircle2 size={13} />
+                          打卡
+                        </button>
+                      ) : null}
                       <button
-                        className="btn ghost small"
-                        title="已完成休息，重置本轮计时"
-                        onClick={() => checkInNow(h)}
+                        className={`icon-btn ${isEditing ? 'active' : ''}`}
+                        title={isEditing ? '收起参数设置' : '调整间隔与生效时段'}
+                        onClick={() => setEditingId(isEditing ? null : h.id)}
                       >
-                        <CheckCircle2 size={13} />
-                        打卡
+                        <SlidersHorizontal size={14} />
                       </button>
-                    ) : null}
+                      {app.state.health.length > 1 ? (
+                        <button
+                          className="icon-btn"
+                          title="删除该项（支持撤销）"
+                          onClick={() => deleteHealth(h)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      ) : null}
+                    </div>
                     <button
-                      className={`icon-btn ${isEditing ? 'active' : ''}`}
-                      title={isEditing ? '收起参数设置' : '调整间隔与生效时段'}
-                      onClick={() => setEditingId(isEditing ? null : h.id)}
-                    >
-                      <SlidersHorizontal size={14} />
-                    </button>
-                    {app.state.health.length > 1 ? (
-                      <button
-                        className="icon-btn"
-                        title="删除该项（支持撤销）"
-                        onClick={() => deleteHealth(h)}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    ) : null}
-                  <button
-                    className={`toggle ${h.enabled ? 'on' : ''}`}
-                    onClick={() =>
-                      app.patch((s) => ({
-                        ...s,
-                        health: s.health.map((x) =>
-                          x.id === h.id
-                            ? {
-                                ...x,
-                                enabled: !x.enabled,
-                                lastFiredAt: !x.enabled ? nowIso() : x.lastFiredAt
-                              }
-                            : x
-                        )
-                      }))
-                    }
-                  />
+                      className={`toggle ${h.enabled ? 'on' : ''}`}
+                      onClick={() =>
+                        app.patch((s) => ({
+                          ...s,
+                          health: s.health.map((x) =>
+                            x.id === h.id
+                              ? {
+                                  ...x,
+                                  enabled: !x.enabled,
+                                  lastFiredAt: !x.enabled ? nowIso() : x.lastFiredAt
+                                }
+                              : x
+                          )
+                        }))
+                      }
+                    />
+                  </div>
                 </div>
-              </div>
 
               <p className="muted" style={{ margin: '2px 0 0', lineHeight: 1.5 }}>
                 {h.message}

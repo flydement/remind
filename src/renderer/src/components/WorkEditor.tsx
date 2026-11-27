@@ -586,7 +586,7 @@ export default function WorkEditor({
             ) : null}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span className="muted" style={{ marginRight: 4 }}>
+            <span className="muted desktop-only-hint" style={{ marginRight: 4 }}>
               Ctrl+Enter 保存
             </span>
             <button type="button" className="btn ghost" onClick={onClose}>

@@ -168,7 +168,7 @@ export default function TodayPage({
         <div className="card pinkcat-hero-card">
           <div className="pinkcat-hero-copy">
             <span className="pinkcat-kicker">粉萌喵喵工作台</span>
-            <h3>小猫已就位，陪你把今天安排得甜甜顺顺～</h3>
+            <h3>小猫已就位，陪你甜甜顺顺安排今天～</h3>
             <p className="muted" style={{ margin: 0, lineHeight: 1.55 }}>
               {app.stats.dueToday > 0
                 ? `今日有 ${app.stats.dueToday} 项到期事项，还有 ${activeHealthCount} 项健康节律守护你喝水与放松。`
@@ -229,7 +229,7 @@ export default function TodayPage({
           title="点击查看全部未完成事项"
         >
           <div className="stat-top">
-            <span>待处理事项{app.stats.doing > 0 ? `（进行中 ${app.stats.doing}）` : ''}</span>
+            <span>{app.stats.doing > 0 ? `待处理 · 进行中 ${app.stats.doing}` : '待处理事项'}</span>
             <div className="stat-icon primary">
               <ClipboardList size={15} />
             </div>

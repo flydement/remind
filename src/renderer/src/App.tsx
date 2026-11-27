@@ -77,6 +77,11 @@ export default function App() {
   const [globalExcelOpen, setGlobalExcelOpen] = useState(false)
   const themePopRef = useRef<HTMLDivElement | null>(null)
   const mobileThemeRef = useRef<HTMLDivElement | null>(null)
+  const mainRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0 })
+  }, [page])
 
   useEffect(() => {
     if (!themeMenuOpen && !mobileThemeOpen) return
@@ -379,7 +384,7 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="main">
+      <main className="main" ref={mainRef}>
         <header className="mobile-topbar">
           <div className="mobile-brand" onClick={() => setPage('today')}>
             <img src={activeLogo} alt="小猫工作助手" />
@@ -458,6 +463,9 @@ export default function App() {
       <nav className="mobile-nav">
         {NAV.map((item) => {
           const Icon = item.icon
+          const showOverdueDot = item.id === 'work' && app.stats.overdue > 0
+          const showOpenDot = item.id === 'work' && !showOverdueDot && app.stats.open > 0
+          const showUnreadDot = item.id === 'today' && app.stats.unreadInbox > 0
           return (
             <button
               key={item.id}
@@ -467,7 +475,11 @@ export default function App() {
                 setPage(item.id)
               }}
             >
-              <Icon size={17} />
+              <span className="mobile-nav-icon-wrap">
+                <Icon size={17} />
+                {showOverdueDot ? <i className="mobile-nav-dot danger" /> : null}
+                {showOpenDot || showUnreadDot ? <i className="mobile-nav-dot" /> : null}
+              </span>
               <span>{item.shortLabel}</span>
             </button>
           )
