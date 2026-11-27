@@ -3,16 +3,21 @@ import {
   AlertCircle,
   Bell,
   CalendarClock,
+  Check,
   CheckCheck,
+  CheckCircle2,
   ClipboardList,
+  Copy,
   FastForward,
+  HeartPulse,
   RefreshCw,
   Timer,
   Trash2,
   X
 } from 'lucide-react'
-import type { PageId, WorkItem } from '@shared/types'
-import { formatDateTimeCn, isSameDay } from '@shared/time'
+import type { HealthReminder, PageId, WorkItem } from '@shared/types'
+import { createId } from '@shared/ids'
+import { formatDateTimeCn, inWorkHours, isSameDay, nowIso } from '@shared/time'
 import pinkCatBanner from '../assets/pink-cat-banner.svg'
 import PageHead from '../components/PageHead'
 import QuickComposer from '../components/QuickComposer'
@@ -20,6 +25,30 @@ import type { useAppState } from '../state'
 import WorkEditor from '../components/WorkEditor'
 import WorkList from '../components/WorkList'
 import type { WorkFilter } from './WorkPage'
+
+async function copyQuoteText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // fallback below
+  }
+  try {
+    const el = document.createElement('textarea')
+    el.value = text
+    el.style.position = 'fixed'
+    el.style.opacity = '0'
+    document.body.appendChild(el)
+    el.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(el)
+    return ok
+  } catch {
+    return false
+  }
+}
 
 export default function TodayPage({
   app,
@@ -33,6 +62,7 @@ export default function TodayPage({
   const [editing, setEditing] = useState<WorkItem | null>(null)
   const clearComposerRef = useRef<(() => void) | null>(null)
   const [showAnswer, setShowAnswer] = useState(false)
+  const [copiedQuote, setCopiedQuote] = useState(false)
   const [scheduleTab, setScheduleTab] = useState<'priority' | 'today' | 'doing'>('priority')
   const [inboxFilter, setInboxFilter] = useState<'all' | 'work' | 'health' | 'quote'>('all')
   const [notifyBannerHidden, setNotifyBannerHidden] = useState(() => {
@@ -75,6 +105,47 @@ export default function TodayPage({
         .slice(0, 8),
     [app.state.inbox, inboxFilter]
   )
+
+  const nextHealth = useMemo(() => {
+    const enabled = app.state.health.filter((h) => h.enabled)
+    if (!enabled.length) return null
+    const scored = enabled.map((h) => {
+      const inWin = !h.workHoursOnly || inWorkHours(app.now, h.workStart, h.workEnd)
+      const elapsedMin = h.lastFiredAt
+        ? Math.max(0, (app.now.getTime() - new Date(h.lastFiredAt).getTime()) / 60_000)
+        : 0
+      const remainMin = Math.max(1, Math.ceil(h.intervalMinutes - elapsedMin))
+      return { item: h, inWin, remainMin }
+    })
+    scored.sort((a, b) => {
+      if (a.inWin !== b.inWin) return a.inWin ? -1 : 1
+      return a.remainMin - b.remainMin
+    })
+    return scored[0]
+  }, [app.state.health, app.now])
+
+  const quickCheckInHealth = (h: HealthReminder): void => {
+    const at = nowIso()
+    app.patch((s) => ({
+      ...s,
+      health: s.health.map((x) => (x.id === h.id ? { ...x, lastFiredAt: at } : x))
+    }))
+    app.setFlash({
+      id: createId('fl'),
+      title: `${h.emoji} 已打卡：${h.title}`,
+      body: `计时器已重置，将在 ${h.intervalMinutes} 分钟后再次提醒。`,
+      source: 'health'
+    })
+  }
+
+  const handleCopyQuote = async (): Promise<void> => {
+    if (!quote) return
+    const payload = quote.answer ? `${quote.content}\n答案：${quote.answer}` : quote.content
+    if (await copyQuoteText(payload)) {
+      setCopiedQuote(true)
+      window.setTimeout(() => setCopiedQuote(false), 1800)
+    }
+  }
 
   const isExisting = Boolean(editing && app.state.workItems.some((w) => w.id === editing.id))
   const activeHealthCount = app.state.health.filter((h) => h.enabled).length
@@ -121,14 +192,16 @@ export default function TodayPage({
       ) : null}
 
       {!window.rian && app.notifyPerm !== 'granted' && !notifyBannerHidden ? (
-        <div className="card banner-warn">
-          <div>
-            <b>尚未授权浏览器系统通知</b>
-            <div className="muted">开启后，即使切换到其他窗口或标签页也能准时接收桌面提醒。</div>
+        <div className="banner-soft">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+            <Bell size={14} color="var(--primary)" style={{ flexShrink: 0 }} />
+            <span className="muted" style={{ color: 'var(--ink-soft)' }}>
+              <b style={{ color: 'var(--ink)', fontWeight: 600 }}>开启浏览器系统通知</b>，切换标签页也能准时收到事项与健康提醒
+            </span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button className="btn small" onClick={() => void app.enableNotifications()}>
-              开启系统通知
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <button className="btn ghost small" onClick={() => void app.enableNotifications()}>
+              立即开启
             </button>
             <button
               type="button"
@@ -143,7 +216,7 @@ export default function TodayPage({
                 }
               }}
             >
-              <X size={14} />
+              <X size={13} />
             </button>
           </div>
         </div>
@@ -192,16 +265,22 @@ export default function TodayPage({
         <div
           className="card stat clickable"
           onClick={() => {
-            if (!app.focusTimer.active) app.startFocus()
+            if (app.focusTimer.active) app.pauseResumeFocus()
+            else app.startFocus()
           }}
           title={
             app.focusTimer.active
-              ? '专注计时进行中'
+              ? app.focusTimer.paused
+                ? '点击继续番茄专注'
+                : '点击暂停番茄专注'
               : `点击开启 ${app.defaultFocusMinutes} 分钟番茄专注`
           }
         >
           <div className="stat-top">
-            <span>今日专注（分钟）</span>
+            <span>
+              今日专注（分钟）
+              {app.focusTimer.active ? (app.focusTimer.paused ? ' · 已暂停' : ' · 计时中') : ''}
+            </span>
             <div className="stat-icon forest">
               <Timer size={15} />
             </div>
@@ -280,6 +359,7 @@ export default function TodayPage({
             }
             onToggle={(w) => app.toggleWork(w)}
             onOpen={setEditing}
+            onDelete={(w) => app.deleteWork(w.id)}
             onStartFocus={(w) => app.startFocus(undefined, w.id)}
             onTogglePin={(id) => app.togglePinWork(id)}
             onToggleSubtask={(wId, sId) => app.toggleSubtask(wId, sId)}
@@ -289,27 +369,37 @@ export default function TodayPage({
           />
         </div>
 
-        <div>
-          <div className="card quote-hero" style={{ marginBottom: 18 }}>
+        <div className="today-side-col">
+          <div className="card quote-hero">
             <div className="section-head" style={{ marginBottom: 4 }}>
               <div className="quote-kind">
                 {quote?.kind === 'joke' ? '工作间歇' : quote?.kind === 'riddle' ? '思维热身' : '每日寄语'}
               </div>
-              <button
-                type="button"
-                className="icon-btn"
-                title="换一句"
-                onClick={() => {
-                  setShowAnswer(false)
-                  app.shuffleQuote()
-                }}
-              >
-                <RefreshCw size={13} />
-              </button>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="复制这一句"
+                  onClick={() => void handleCopyQuote()}
+                >
+                  {copiedQuote ? <Check size={13} color="var(--forest)" /> : <Copy size={13} />}
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="换一句"
+                  onClick={() => {
+                    setShowAnswer(false)
+                    app.shuffleQuote()
+                  }}
+                >
+                  <RefreshCw size={13} />
+                </button>
+              </div>
             </div>
             <p className="quote-body">{quote?.content ?? '张弛有度，方能行稳致远。'}</p>
             {quote?.answer ? (
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 10 }}>
                 {showAnswer ? (
                   <p className="muted" style={{ margin: 0 }}>
                     答案：{quote.answer}{' '}
@@ -324,6 +414,41 @@ export default function TodayPage({
                 )}
               </div>
             ) : null}
+          </div>
+
+          <div className="card health-peek-card">
+            <div className="section-head" style={{ marginBottom: 8 }}>
+              <h3 style={{ margin: 0 }}>
+                <HeartPulse size={15} color="var(--forest)" /> 健康节律护航
+              </h3>
+              <button type="button" className="btn ghost small" onClick={() => go('health')}>
+                管理 ({activeHealthCount}/{app.state.health.length})
+              </button>
+            </div>
+            {nextHealth ? (
+              <div className="health-peek-row">
+                <div className="emoji-badge health-peek-emoji">{nextHealth.item.emoji}</div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13.5 }}>{nextHealth.item.title}</div>
+                  <div className="muted" style={{ marginTop: 2 }}>
+                    {nextHealth.inWin
+                      ? `约 ${nextHealth.remainMin} 分钟后提醒 · 每 ${nextHealth.item.intervalMinutes}m`
+                      : `工作时段 ${nextHealth.item.workStart}–${nextHealth.item.workEnd} 自动守护`}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn ghost small"
+                  title="完成本次休息并重置计时"
+                  onClick={() => quickCheckInHealth(nextHealth.item)}
+                >
+                  <CheckCircle2 size={13} />
+                  打卡
+                </button>
+              </div>
+            ) : (
+              <div className="muted">暂未启用健康节律，点击右上角「管理」可一键开启。</div>
+            )}
           </div>
 
           <div className="card">
@@ -344,24 +469,26 @@ export default function TodayPage({
                 </div>
               ) : null}
             </div>
-            <div className="filters" style={{ marginBottom: 8 }}>
-              {(
-                [
-                  ['all', '全部'],
-                  ['work', '事项'],
-                  ['health', '健康'],
-                  ['quote', '文库']
-                ] as const
-              ).map(([k, label]) => (
-                <button
-                  key={k}
-                  className={`chip ${inboxFilter === k ? 'on' : ''}`}
-                  onClick={() => setInboxFilter(k)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            {app.state.inbox.length > 0 ? (
+              <div className="filters" style={{ marginBottom: 8 }}>
+                {(
+                  [
+                    ['all', '全部'],
+                    ['work', '事项'],
+                    ['health', '健康'],
+                    ['quote', '文库']
+                  ] as const
+                ).map(([k, label]) => (
+                  <button
+                    key={k}
+                    className={`chip ${inboxFilter === k ? 'on' : ''}`}
+                    onClick={() => setInboxFilter(k)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <div className="inbox">
               {filteredInbox.length ? (
                 <ul>
@@ -388,7 +515,9 @@ export default function TodayPage({
                   ))}
                 </ul>
               ) : (
-                <div className="empty">暂无消息记录，系统将按设定计划准时推送。</div>
+                <div className="empty" style={{ padding: '18px 8px' }}>
+                  暂无消息记录，系统将按设定计划准时推送。
+                </div>
               )}
             </div>
           </div>

@@ -1,14 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Bell, BellOff, Calendar, Flag, HelpCircle, Repeat, SlidersHorizontal, Sparkles, User, X } from 'lucide-react'
 import type { RepeatRule, WorkItem, WorkPriority } from '@shared/types'
 import { parseWorkText, previewNotifyDate, WORK_SYNTAX_GUIDE } from '@shared/parser'
-import { toLocalDate } from '@shared/time'
+import { addDays, startOfWeek, toLocalDate } from '@shared/time'
 import { newWorkItem, type useAppState } from '../state'
 
 const SAMPLES = [
-  '任务：整理财务月报 截止12月31日 从今天开始每天早上10点提醒我一次 #财务',
+  '整理财务月报 截止12月31日 从今天开始每天早上10点提醒 #财务',
   '周五 下午3点半 架构评审 #研发 重点',
-  '月报 8月11号 提前5天通知 #汇报',
   '每个工作日重复 17:30 填写工时'
 ]
 
@@ -17,6 +16,10 @@ const REPEAT_LABEL: Record<Exclude<RepeatRule, 'none'>, string> = {
   weekdays: '工作日重复',
   weekly: '每周重复',
   monthly: '每月重复'
+}
+
+function makeEndOfDayIso(d: Date): string {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 18, 0, 0, 0).toISOString()
 }
 
 export default function QuickComposer({
@@ -28,33 +31,55 @@ export default function QuickComposer({
   compact?: boolean
   onOpenDetailed: (draftItem: WorkItem, clearInput: () => void) => void
 }) {
+  const inputRef = useRef<HTMLInputElement | null>(null)
   const [text, setText] = useState('')
   const [showSyntax, setShowSyntax] = useState(false)
   const [priorityOverride, setPriorityOverride] = useState<WorkPriority | null>(null)
   const [notifyOverride, setNotifyOverride] = useState<boolean | null>(null)
+  const [dueOverride, setDueOverride] = useState<string | null>(null)
 
   const parsed = useMemo(() => parseWorkText(text, app.now), [text, app.now])
   const effectivePriority: WorkPriority = priorityOverride ?? parsed.priority
   const effectiveNotifyEnabled: boolean = notifyOverride ?? parsed.notify.enabled
+  const effectiveDueAt: string = dueOverride ?? parsed.dueAt
+
+  const quickDates = useMemo(() => {
+    const today = new Date(app.now.getFullYear(), app.now.getMonth(), app.now.getDate())
+    return [
+      { label: '今天', iso: makeEndOfDayIso(today) },
+      { label: '明天', iso: makeEndOfDayIso(addDays(today, 1)) },
+      { label: '后天', iso: makeEndOfDayIso(addDays(today, 2)) },
+      { label: '下周一', iso: makeEndOfDayIso(addDays(startOfWeek(today), 7)) }
+    ]
+  }, [app.now])
 
   const resetAll = (): void => {
     setText('')
     setPriorityOverride(null)
     setNotifyOverride(null)
+    setDueOverride(null)
   }
 
   const handleTextChange = (val: string): void => {
     setText(val)
+    setDueOverride(null)
     if (!val.trim()) {
       setPriorityOverride(null)
       setNotifyOverride(null)
     }
   }
 
+  const cycleQuickDate = (): void => {
+    const curDate = toLocalDate(new Date(effectiveDueAt))
+    const idx = quickDates.findIndex((q) => toLocalDate(new Date(q.iso)) === curDate)
+    const next = quickDates[(idx + 1) % quickDates.length]
+    setDueOverride(next.iso)
+  }
+
   const buildItem = (): WorkItem =>
     newWorkItem({
       title: parsed.title,
-      dueAt: parsed.dueAt,
+      dueAt: effectiveDueAt,
       priority: effectivePriority,
       assignee: parsed.assignee,
       tags: parsed.tags,
@@ -65,9 +90,13 @@ export default function QuickComposer({
     })
 
   const quickCreate = (): void => {
-    if (!text.trim()) return
+    if (!text.trim()) {
+      inputRef.current?.focus()
+      return
+    }
     app.saveWork(buildItem())
     resetAll()
+    inputRef.current?.focus()
   }
 
   const openDetailed = (): void => {
@@ -78,13 +107,14 @@ export default function QuickComposer({
     onOpenDetailed(buildItem(), resetAll)
   }
 
-  const dueStr = toLocalDate(new Date(parsed.dueAt))
+  const dueStr = toLocalDate(new Date(effectiveDueAt))
   const notifyStr = effectiveNotifyEnabled
-    ? previewNotifyDate(parsed.dueAt, parsed.notify.advanceDays, parsed.notify.time, parsed.notify.frequency)
+    ? previewNotifyDate(effectiveDueAt, parsed.notify.advanceDays, parsed.notify.time, parsed.notify.frequency)
     : '不提醒'
+  const showSamples = !compact || app.state.workItems.length === 0
 
   return (
-    <div className="card composer-card" style={{ marginBottom: compact ? 16 : 18 }}>
+    <div className="card composer-card" style={{ marginBottom: compact ? 14 : 18 }}>
       {!compact ? (
         <div className="section-head" style={{ marginBottom: 10 }}>
           <h3 style={{ margin: 0 }}>
@@ -106,9 +136,10 @@ export default function QuickComposer({
         <div className="composer-input-wrap">
           <Sparkles size={15} className="composer-icon" />
           <input
+            ref={inputRef}
             data-quick-composer="true"
             value={text}
-            placeholder="输入一句话回车即建，如：任务：整理财务月报 截止12月31日 从今天开始每天早上10点提醒我一次"
+            placeholder="一句话回车即建，如：周五 15:30 架构评审 #研发 重点（按 N 聚焦）"
             onChange={(e) => handleTextChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -128,7 +159,10 @@ export default function QuickComposer({
               type="button"
               className="composer-clear"
               title="清空输入 (Esc)"
-              onClick={resetAll}
+              onClick={() => {
+                resetAll()
+                inputRef.current?.focus()
+              }}
             >
               <X size={13} />
             </button>
@@ -149,12 +183,11 @@ export default function QuickComposer({
         {compact ? (
           <button
             type="button"
-            className={`btn ghost ${showSyntax ? 'active-outline' : ''}`}
+            className={`icon-btn ${showSyntax ? 'active' : ''}`}
             onClick={() => setShowSyntax((v) => !v)}
             title="查看自然语言录入语法"
           >
-            <HelpCircle size={14} />
-            语法
+            <HelpCircle size={15} />
           </button>
         ) : null}
       </div>
@@ -165,9 +198,14 @@ export default function QuickComposer({
             <span className="parsed-title-chip" title="识别出的事项名称">
               {parsed.title}
             </span>
-            <span className="tag" title="截止日期">
+            <button
+              type="button"
+              className="tag tag-interactive"
+              title="点击快速切换截止日（今天 / 明天 / 后天 / 下周一）"
+              onClick={cycleQuickDate}
+            >
               <Calendar size={11} /> 截止 {dueStr}
-            </span>
+            </button>
             <button
               type="button"
               className={`tag tag-interactive ${effectiveNotifyEnabled ? 'primary' : ''}`}
@@ -207,18 +245,31 @@ export default function QuickComposer({
               </span>
             ) : null}
           </div>
-          {parsed.hints.length ? <span className="muted">{parsed.hints.join('；')}</span> : null}
+          <div className="parsed-preview-foot">
+            <span className="muted">
+              {parsed.hints.length ? parsed.hints.join('；') : '点击标签可直接微调截止日、提醒与优先级'}
+            </span>
+            <span className="muted">Enter 创建 · Ctrl+Enter 详配</span>
+          </div>
         </div>
-      ) : (
+      ) : showSamples ? (
         <div className="quick-samples">
-          <span>示例（按 N 聚焦）：</span>
+          <span>试试：</span>
           {SAMPLES.map((s) => (
-            <button key={s} type="button" className="sample-pill" onClick={() => handleTextChange(s)}>
+            <button
+              key={s}
+              type="button"
+              className="sample-pill"
+              onClick={() => {
+                handleTextChange(s)
+                inputRef.current?.focus()
+              }}
+            >
               {s}
             </button>
           ))}
         </div>
-      )}
+      ) : null}
 
       {showSyntax ? (
         <div className="syntax-guide">

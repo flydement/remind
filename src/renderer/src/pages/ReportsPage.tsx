@@ -18,6 +18,7 @@ import {
   Trash2
 } from 'lucide-react'
 import type { ReportKind, ReportStyle } from '@shared/types'
+import { createId } from '@shared/ids'
 import { generateReport, periodOf, upsertReport } from '@shared/reports'
 import { addDays, addMonthsClamped, formatDateTimeCn, toLocalDate } from '@shared/time'
 import PageHead from '../components/PageHead'
@@ -100,17 +101,26 @@ export default function ReportsPage({ app }: { app: ReturnType<typeof useAppStat
     setEditingBody(null)
   }, [kind])
 
-  const archiveOrRefresh = (nextStyle = style): void => {
+  const archiveOrRefresh = (nextStyle = style, silent = false): void => {
+    const wasPreview = !periodMatched
     setSelectedId(null)
     setEditingBody(null)
     app.patch((s) => upsertReport(s, kind, targetDate, nextStyle))
+    if (!silent) {
+      app.setFlash({
+        id: createId('fl'),
+        title: wasPreview ? '已归档本期报告' : '已重新汇总本期报告',
+        body: current.title,
+        source: 'info'
+      })
+    }
   }
 
   const handleStyleSwitch = (nextStyle: ReportStyle): void => {
     setStyle(nextStyle)
     setEditingBody(null)
     if (periodMatched) {
-      archiveOrRefresh(nextStyle)
+      archiveOrRefresh(nextStyle, true)
     }
   }
 
@@ -131,6 +141,12 @@ export default function ReportsPage({ app }: { app: ReturnType<typeof useAppStat
       })
     }
     setEditingBody(null)
+    app.setFlash({
+      id: createId('fl'),
+      title: '已保存报告修改',
+      body: current.title,
+      source: 'info'
+    })
   }
 
   const handleCopy = async (): Promise<void> => {
@@ -153,6 +169,12 @@ export default function ReportsPage({ app }: { app: ReturnType<typeof useAppStat
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+    app.setFlash({
+      id: createId('fl'),
+      title: '已导出 Markdown 报告',
+      body: `${current.title.replace(/\s+/g, '')}.md`,
+      source: 'info'
+    })
   }
 
   const activePeriodLabel = `${toLocalDate(new Date(current.periodStart))} ~ ${toLocalDate(new Date(current.periodEnd))}`
@@ -171,78 +193,76 @@ export default function ReportsPage({ app }: { app: ReturnType<typeof useAppStat
         }
       />
 
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 10,
-          flexWrap: 'wrap',
-          marginBottom: 14
-        }}
-      >
-        <div className="filters" style={{ marginBottom: 0 }}>
-          <button className={`chip ${kind === 'weekly' ? 'on' : ''}`} onClick={() => setKind('weekly')}>
-            工作周报
-          </button>
-          <button className={`chip ${kind === 'monthly' ? 'on' : ''}`} onClick={() => setKind('monthly')}>
-            工作月报
-          </button>
-          <span className="muted" style={{ margin: '0 4px' }}>
-            |
-          </span>
-          {(
-            [
-              ['executive', '严谨汇报版'],
-              ['concise', '精简要点版'],
-              ['warm', '温和复盘版']
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              className={`chip ${style === id ? 'on' : ''}`}
-              onClick={() => handleStyleSwitch(id)}
-            >
-              {label}
+      <div className="work-toolbar" style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="seg-tabs">
+            <button type="button" className={kind === 'weekly' ? 'on' : ''} onClick={() => setKind('weekly')}>
+              工作周报
             </button>
-          ))}
+            <button type="button" className={kind === 'monthly' ? 'on' : ''} onClick={() => setKind('monthly')}>
+              工作月报
+            </button>
+          </div>
+          <div className="seg-tabs">
+            {(
+              [
+                ['executive', '严谨汇报'],
+                ['concise', '精简要点'],
+                ['warm', '温和复盘']
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className={style === id ? 'on' : ''}
+                onClick={() => handleStyleSwitch(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button
-            className="btn ghost small"
-            onClick={() => {
-              setSelectedId(null)
-              setEditingBody(null)
-              setOffset((o) => o - 1)
-            }}
-          >
-            <ChevronLeft size={13} />
-            {kind === 'weekly' ? '上一周' : '上个月'}
-          </button>
-          <button
-            className="btn ghost small"
-            disabled={offset === 0 && !selectedId}
-            onClick={() => {
-              setSelectedId(null)
-              setEditingBody(null)
-              setOffset(0)
-            }}
-            title={targetPeriodLabel}
-          >
-            {offset === 0 ? (kind === 'weekly' ? '本周' : '本月') : targetPeriodLabel}
-          </button>
-          <button
-            className="btn ghost small"
-            onClick={() => {
-              setSelectedId(null)
-              setEditingBody(null)
-              setOffset((o) => o + 1)
-            }}
-          >
-            {kind === 'weekly' ? '下一周' : '下个月'}
-            <ChevronRight size={13} />
-          </button>
+          <div className="period-stepper">
+            <button
+              type="button"
+              className="icon-btn"
+              title={kind === 'weekly' ? '上一周' : '上个月'}
+              onClick={() => {
+                setSelectedId(null)
+                setEditingBody(null)
+                setOffset((o) => o - 1)
+              }}
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <button
+              type="button"
+              className="period-stepper-label"
+              disabled={offset === 0 && !selectedId}
+              onClick={() => {
+                setSelectedId(null)
+                setEditingBody(null)
+                setOffset(0)
+              }}
+              title={`点击回到${kind === 'weekly' ? '本周' : '本月'}（${targetPeriodLabel}）`}
+            >
+              {offset === 0 ? (kind === 'weekly' ? '本周' : '本月') : targetPeriodLabel}
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              title={kind === 'weekly' ? '下一周' : '下个月'}
+              onClick={() => {
+                setSelectedId(null)
+                setEditingBody(null)
+                setOffset((o) => o + 1)
+              }}
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
           <button className="btn ghost small" onClick={() => archiveOrRefresh(style)}>
             {isLivePreview ? <BookmarkCheck size={13} /> : <RefreshCw size={13} />}
             {isLivePreview ? '归档该期' : '重新汇总'}

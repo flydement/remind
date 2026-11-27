@@ -170,14 +170,14 @@ export default function HealthPage({ app }: { app: ReturnType<typeof useAppState
       ) : null}
 
       <div className="work-toolbar" style={{ marginBottom: 14 }}>
-        <div className="filters" style={{ marginBottom: 0 }}>
-          <button className={`chip ${filter === 'all' ? 'on' : ''}`} onClick={() => setFilter('all')}>
+        <div className="seg-tabs">
+          <button type="button" className={filter === 'all' ? 'on' : ''} onClick={() => setFilter('all')}>
             全部节律 ({app.state.health.length})
           </button>
-          <button className={`chip ${filter === 'active' ? 'on' : ''}`} onClick={() => setFilter('active')}>
+          <button type="button" className={filter === 'active' ? 'on' : ''} onClick={() => setFilter('active')}>
             已启用 ({activeCount})
           </button>
-          <button className={`chip ${filter === 'paused' ? 'on' : ''}`} onClick={() => setFilter('paused')}>
+          <button type="button" className={filter === 'paused' ? 'on' : ''} onClick={() => setFilter('paused')}>
             待开启 ({pausedCount})
           </button>
         </div>

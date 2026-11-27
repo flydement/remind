@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Copy, Pin, Play, Plus, Trash2, X } from 'lucide-react'
 import {
   normalizePriority,
@@ -44,6 +44,7 @@ export default function WorkEditor({
   onSave: (item: WorkItem) => void
   onDelete?: (item: WorkItem) => void
 }) {
+  const titleRef = useRef<HTMLInputElement | null>(null)
   const [draft, setDraft] = useState<WorkItem>({
     ...item,
     priority: normalizePriority(item.priority),
@@ -62,6 +63,9 @@ export default function WorkEditor({
     })
     setTagInput('')
     setSubtaskInput('')
+    if (!item.title.trim()) {
+      window.setTimeout(() => titleRef.current?.focus(), 20)
+    }
   }, [item])
 
   useEffect(() => {
@@ -85,6 +89,17 @@ export default function WorkEditor({
     () => previewNotifyDate(draft.dueAt, draft.notify.advanceDays, draft.notify.time, draft.notify.frequency),
     [draft.dueAt, draft.notify.advanceDays, draft.notify.time, draft.notify.frequency]
   )
+
+  const suggestedTags = useMemo(() => {
+    if (!app) return []
+    const set = new Set<string>()
+    for (const w of app.state.workItems) {
+      for (const t of w.tags) {
+        if (!draft.tags.includes(t)) set.add(t)
+      }
+    }
+    return Array.from(set).slice(0, 6)
+  }, [app, draft.tags])
 
   const now = app?.now ?? new Date()
   const focusMins = app?.defaultFocusMinutes ?? 25
@@ -112,13 +127,13 @@ export default function WorkEditor({
     setDraft({ ...draft, dueAt: next.toISOString() })
   }
 
-  const addTag = (): void => {
-    const clean = tagInput.trim().replace(/^#+/, '')
+  const addTag = (raw?: string): void => {
+    const clean = (raw ?? tagInput).trim().replace(/^#+/, '')
     if (!clean) return
     if (!draft.tags.includes(clean)) {
       setDraft({ ...draft, tags: [...draft.tags, clean] })
     }
-    setTagInput('')
+    if (raw === undefined) setTagInput('')
   }
 
   const removeTag = (t: string): void => {
@@ -232,6 +247,7 @@ export default function WorkEditor({
         <div className="field" style={{ marginTop: 12 }}>
           <label>事项名称</label>
           <input
+            ref={titleRef}
             value={draft.title}
             placeholder="请输入工作项名称"
             onChange={(e) => setDraft({ ...draft, title: e.target.value })}
@@ -241,24 +257,44 @@ export default function WorkEditor({
         <div className="form-grid">
           <div className="field">
             <label>当前状态</label>
-            <select
-              value={draft.status}
-              onChange={(e) => setDraft({ ...draft, status: e.target.value as WorkStatus })}
-            >
-              <option value="todo">待办</option>
-              <option value="doing">进行中</option>
-              <option value="done">已完成</option>
-            </select>
+            <div className="seg-tabs seg-tabs-full">
+              {(
+                [
+                  ['todo', '待办'],
+                  ['doing', '进行中'],
+                  ['done', '已完成']
+                ] as const
+              ).map(([st, label]) => (
+                <button
+                  key={st}
+                  type="button"
+                  className={draft.status === st ? 'on' : ''}
+                  onClick={() => setDraft({ ...draft, status: st as WorkStatus })}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="field">
             <label>优先级</label>
-            <select
-              value={draft.priority ?? 'normal'}
-              onChange={(e) => setDraft({ ...draft, priority: e.target.value as WorkPriority })}
-            >
-              <option value="normal">一般</option>
-              <option value="high">重点</option>
-            </select>
+            <div className="seg-tabs seg-tabs-full">
+              {(
+                [
+                  ['normal', '一般工作'],
+                  ['high', '重点优先']
+                ] as const
+              ).map(([p, label]) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={draft.priority === p ? (p === 'high' ? 'on danger-seg' : 'on') : ''}
+                  onClick={() => setDraft({ ...draft, priority: p as WorkPriority })}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="field">
             <label>截止日期</label>
@@ -339,11 +375,23 @@ export default function WorkEditor({
                   }
                 }}
               />
-              <button type="button" className="btn ghost small" onClick={addTag}>
+              <button type="button" className="btn ghost small" onClick={() => addTag()}>
                 添加
               </button>
             </div>
           </div>
+          {suggestedTags.length > 0 ? (
+            <div className="preset-pills" style={{ marginTop: 4 }}>
+              <span className="muted" style={{ fontSize: 11, alignSelf: 'center' }}>
+                常用：
+              </span>
+              {suggestedTags.map((t) => (
+                <button key={t} type="button" className="preset-pill" onClick={() => addTag(t)}>
+                  + #{t}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div className="field" style={{ marginTop: 12 }}>

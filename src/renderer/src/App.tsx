@@ -260,9 +260,14 @@ export default function App() {
                   </span>
                 </div>
                 {focusWork ? (
-                  <div className="focus-task-name" title={focusWork.title}>
+                  <button
+                    type="button"
+                    className="focus-task-name focus-task-link"
+                    title={`点击查看或编辑：${focusWork.title}`}
+                    onClick={() => setGlobalEditing(focusWork)}
+                  >
                     {focusWork.title}
-                  </div>
+                  </button>
                 ) : null}
                 <div className="sidebar-progress" style={{ margin: '7px 0' }}>
                   <div className="sidebar-progress-bar accent" style={{ width: `${focusPct}%` }} />

@@ -24,7 +24,8 @@ export default function WorkList({
   onToggleSubtask,
   onAddSubtask,
   onCycleDoing,
-  onPostponeOneDay
+  onPostponeOneDay,
+  onTagClick
 }: {
   items: WorkItem[]
   empty: string
@@ -39,6 +40,7 @@ export default function WorkList({
   onAddSubtask?: (workId: string, title: string) => void
   onCycleDoing?: (w: WorkItem) => void
   onPostponeOneDay?: (w: WorkItem) => void
+  onTagClick?: (tag: string) => void
 }) {
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({})
   const [subInputs, setSubInputs] = useState<Record<string, string>>({})
@@ -118,11 +120,26 @@ export default function WorkList({
                   </span>
                 ) : null}
                 {w.repeat !== 'none' ? <span className="tag accent">{REPEAT_TAG[w.repeat]}</span> : null}
-                {w.tags.map((t) => (
-                  <span key={t} className="tag">
-                    #{t}
-                  </span>
-                ))}
+                {w.tags.map((t) =>
+                  onTagClick ? (
+                    <button
+                      key={t}
+                      type="button"
+                      className="tag tag-interactive"
+                      title={`按 #${t} 筛选`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onTagClick(t)
+                      }}
+                    >
+                      #{t}
+                    </button>
+                  ) : (
+                    <span key={t} className="tag">
+                      #{t}
+                    </span>
+                  )
+                )}
               </div>
 
               <div className="meta">

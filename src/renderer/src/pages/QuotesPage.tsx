@@ -37,10 +37,12 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
   const today = app.state.quotes.find((q) => q.id === s.lastQuoteId) ?? app.state.quotes.find((q) => q.enabled)
   const [showAnswer, setShowAnswer] = useState(false)
   const [copiedHero, setCopiedHero] = useState(false)
+  const [copiedRowId, setCopiedRowId] = useState<string | null>(null)
   const [tab, setTab] = useState<'schedule' | 'library'>('schedule')
   const [adding, setAdding] = useState(false)
   const [kindFilter, setKindFilter] = useState<'all' | QuoteKind>('all')
   const [search, setSearch] = useState('')
+  const [visibleLimit, setVisibleLimit] = useState(40)
   const [newKind, setNewKind] = useState<QuoteKind>('motivation')
   const [newContent, setNewContent] = useState('')
   const [newAnswer, setNewAnswer] = useState('')
@@ -84,6 +86,14 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
     if (await copyToClipboard(text)) {
       setCopiedHero(true)
       window.setTimeout(() => setCopiedHero(false), 1800)
+    }
+  }
+
+  const handleCopyRow = async (q: QuoteItem): Promise<void> => {
+    const text = q.answer ? `${q.content}\n答案：${q.answer}` : q.content
+    if (await copyToClipboard(text)) {
+      setCopiedRowId(q.id)
+      window.setTimeout(() => setCopiedRowId((cur) => (cur === q.id ? null : cur)), 1600)
     }
   }
 
@@ -223,13 +233,15 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
         </div>
       ) : null}
 
-      <div className="filters">
-        <button className={`chip ${tab === 'schedule' ? 'on' : ''}`} onClick={() => setTab('schedule')}>
-          推送计划配置
-        </button>
-        <button className={`chip ${tab === 'library' ? 'on' : ''}`} onClick={() => setTab('library')}>
-          管理词条库（{app.state.quotes.length} 条）
-        </button>
+      <div style={{ marginBottom: 14 }}>
+        <div className="seg-tabs">
+          <button type="button" className={tab === 'schedule' ? 'on' : ''} onClick={() => setTab('schedule')}>
+            推送计划配置
+          </button>
+          <button type="button" className={tab === 'library' ? 'on' : ''} onClick={() => setTab('library')}>
+            管理词条库（{app.state.quotes.length} 条）
+          </button>
+        </div>
       </div>
 
       {tab === 'schedule' ? (
@@ -386,14 +398,23 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
 
           <div className="work-toolbar">
             <div className="filters" style={{ marginBottom: 0 }}>
-              <button className={`chip ${kindFilter === 'all' ? 'on' : ''}`} onClick={() => setKindFilter('all')}>
+              <button
+                className={`chip ${kindFilter === 'all' ? 'on' : ''}`}
+                onClick={() => {
+                  setKindFilter('all')
+                  setVisibleLimit(40)
+                }}
+              >
                 全部 ({app.state.quotes.length})
               </button>
               {(Object.keys(KIND_LABEL) as QuoteKind[]).map((k) => (
                 <button
                   key={k}
                   className={`chip ${kindFilter === k ? 'on' : ''}`}
-                  onClick={() => setKindFilter(k)}
+                  onClick={() => {
+                    setKindFilter(k)
+                    setVisibleLimit(40)
+                  }}
                 >
                   {KIND_LABEL[k]} ({kindCounts[k]})
                 </button>
@@ -416,11 +437,20 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
                 <input
                   className="search-bar"
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => {
+                    setSearch(e.target.value)
+                    setVisibleLimit(40)
+                  }}
                   placeholder="检索文库内容..."
                 />
                 {search ? (
-                  <button className="search-clear" onClick={() => setSearch('')}>
+                  <button
+                    className="search-clear"
+                    onClick={() => {
+                      setSearch('')
+                      setVisibleLimit(40)
+                    }}
+                  >
                     <X size={13} />
                   </button>
                 ) : null}
@@ -431,7 +461,7 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
           <div className="card">
             <div className="work-list">
               {filteredQuotes.length ? (
-                filteredQuotes.map((q) => (
+                filteredQuotes.slice(0, visibleLimit).map((q) => (
                   <div className={`work ${q.enabled ? '' : 'done'}`} key={q.id}>
                     <button
                       className={`check ${q.enabled ? 'on' : ''}`}
@@ -454,11 +484,11 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
                     </div>
                     <div className="work-actions">
                       <button
-                        className="icon-btn hover-reveal"
-                        title="复制词条"
-                        onClick={() => void copyToClipboard(q.answer ? `${q.content}\n答案：${q.answer}` : q.content)}
+                        className={`icon-btn ${copiedRowId === q.id ? 'active' : 'hover-reveal'}`}
+                        title={copiedRowId === q.id ? '已复制' : '复制词条'}
+                        onClick={() => void handleCopyRow(q)}
                       >
-                        <Copy size={13} />
+                        {copiedRowId === q.id ? <Check size={13} color="var(--forest)" /> : <Copy size={13} />}
                       </button>
                       <button
                         className="icon-btn hover-reveal"
@@ -474,6 +504,17 @@ export default function QuotesPage({ app }: { app: ReturnType<typeof useAppState
                 <div className="empty">没有匹配的文库词条。</div>
               )}
             </div>
+            {filteredQuotes.length > visibleLimit ? (
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: 14 }}>
+                <button
+                  type="button"
+                  className="btn ghost small"
+                  onClick={() => setVisibleLimit((n) => n + 40)}
+                >
+                  展开更多（已显示 {visibleLimit} / {filteredQuotes.length} 条）
+                </button>
+              </div>
+            ) : null}
           </div>
         </>
       )}
